@@ -11,6 +11,9 @@
     "ios": {
       "supportsTablet": true
     },
+    "network": {
+      "useTunnel": true
+    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
