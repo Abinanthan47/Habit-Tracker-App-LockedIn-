@@ -1,8 +1,10 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
+  Alert,
   Platform,
   Pressable,
   RefreshControl,
@@ -11,125 +13,232 @@ import {
   Text,
   View,
 } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeInRight } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import {
+  BorderRadius,
+  Colors,
+  Layout,
+  Spacing,
+  Typography,
+} from "@/constants/design";
 import { useApp } from "@/context/AppContext";
+import type { Goal } from "@/types";
 
-// Neo-Brutalism Vibrant Colors
-const COLORS = {
-  bg: "#FFB1D8",
-  pastelGreen: "#C1FF72",
-  pastelPurple: "#C5B4E3",
-  pastelPink: "#FFB1D8",
-  pastelBlue: "#A0D7FF",
-  pastelYellow: "#FDFD96",
-  white: "#FFFFFF",
-  black: "#000000",
-  darkCard: "#1a1a2e",
-  muted: "rgba(0,0,0,0.5)",
-};
+type TabType = "active" | "completed" | "all";
+
+const TABS: { key: TabType; label: string }[] = [
+  { key: "active", label: "Active" },
+  { key: "completed", label: "Completed" },
+  { key: "all", label: "All" },
+];
 
 export default function GoalsScreen() {
-  const { goals, updateGoalProgress, refreshData, currentStreak } = useApp();
+  const {
+    goals,
+    goalItems,
+    currentStreak,
+    longestStreak,
+    refreshData,
+    deleteGoal,
+    getGoalItems,
+  } = useApp();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState("active");
+  const [activeTab, setActiveTab] = useState<TabType>("active");
+  const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
+
   const currentYear = new Date().getFullYear();
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await refreshData();
     setRefreshing(false);
   }, [refreshData]);
 
-  // Filter goals based on tab
-  const filteredGoals = useMemo(() => {
-    const yearGoals = goals.filter((g) => g.year === currentYear);
+  const handleGoalPress = useCallback((goalId: string) => {
+    Haptics.selectionAsync();
+    router.push({ pathname: "/goal-detail", params: { id: goalId } });
+  }, []);
 
-    switch (activeTab) {
-      case "done":
-        return yearGoals.filter((g) => g.currentValue >= g.targetValue);
-      case "stats":
-        return yearGoals;
-      default:
-        return yearGoals.filter(
-          (g) => !g.isArchived && g.currentValue < g.targetValue
-        );
-    }
-  }, [goals, activeTab, currentYear]);
-
-  // Calculate total progress
-  const totalProgress = useMemo(() => {
-    const activeGoals = goals.filter(
-      (g) => !g.isArchived && g.year === currentYear
-    );
-    if (activeGoals.length === 0) return 0;
-    return Math.round(
-      activeGoals.reduce(
-        (sum, g) => sum + Math.min((g.currentValue / g.targetValue) * 100, 100),
-        0
-      ) / activeGoals.length
-    );
-  }, [goals, currentYear]);
-
-  const handleUpdateProgress = useCallback(
-    async (goalId: string, currentValue: number, targetValue: number) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const newValue = Math.min(currentValue + 1, targetValue);
-      await updateGoalProgress(goalId, newValue);
+  const handleGoalOptions = useCallback(
+    (goalId: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setExpandedGoalId(expandedGoalId === goalId ? null : goalId);
     },
-    [updateGoalProgress]
+    [expandedGoalId],
   );
 
-  // Tab bar dimensions
-  const TAB_BAR_HEIGHT = 64;
-  const BOTTOM_MARGIN = Platform.OS === "ios" ? 24 : 12;
-  const bottomPadding = TAB_BAR_HEIGHT + BOTTOM_MARGIN + 80;
+  const handleDeleteGoal = useCallback(
+    (goal: Goal) => {
+      Alert.alert(
+        "Delete Goal",
+        `Are you sure you want to delete "${goal.title}"? This will also delete all tracked items. This action cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Warning,
+              );
+              await deleteGoal(goal.id);
+              setExpandedGoalId(null);
+            },
+          },
+        ],
+      );
+    },
+    [deleteGoal],
+  );
 
-  const getGoalIcon = (title: string): string => {
-    const lower = title.toLowerCase();
-    if (lower.includes("read") || lower.includes("book")) return "book";
-    if (lower.includes("run") || lower.includes("running")) return "walk";
-    if (
-      lower.includes("workout") ||
-      lower.includes("gym") ||
-      lower.includes("fitness")
-    )
-      return "barbell";
-    if (lower.includes("save") || lower.includes("money")) return "cash";
-    if (lower.includes("meditat")) return "leaf";
-    if (lower.includes("code") || lower.includes("project"))
-      return "code-slash";
-    return "trophy";
-  };
+  // Filter goals
+  const filteredGoals = useMemo(() => {
+    const yearGoals = goals.filter(
+      (g) => g.year === currentYear && !g.isArchived,
+    );
+
+    switch (activeTab) {
+      case "active":
+        return yearGoals.filter((g) => g.currentValue < g.targetValue);
+      case "completed":
+        return yearGoals.filter((g) => g.currentValue >= g.targetValue);
+      case "all":
+        return yearGoals;
+    }
+  }, [goals, currentYear, activeTab]);
+
+  // Calculate overall progress
+  const overallProgress = useMemo(() => {
+    const yearGoals = goals.filter(
+      (g) => g.year === currentYear && !g.isArchived,
+    );
+    if (yearGoals.length === 0) return { completed: 0, total: 0, percent: 0 };
+
+    const completed = yearGoals.filter(
+      (g) => g.currentValue >= g.targetValue,
+    ).length;
+    const percent = Math.round(
+      yearGoals.reduce(
+        (sum, g) => sum + Math.min((g.currentValue / g.targetValue) * 100, 100),
+        0,
+      ) / yearGoals.length,
+    );
+
+    return { completed, total: yearGoals.length, percent };
+  }, [goals, currentYear]);
+
+  const TAB_BAR_HEIGHT = Layout.tabBarHeight;
+  const bottomPadding = TAB_BAR_HEIGHT + (Platform.OS === "ios" ? 24 : 16) + 20;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>YEAR</Text>
-          <Text style={styles.headerTitleBold}> GOALS</Text>
+      <LinearGradient
+        colors={[Colors.surface, Colors.background]}
+        style={styles.headerGradient}
+      >
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerSubtitle}>{currentYear}</Text>
+            <Text style={styles.headerTitle}>Goals</Text>
+          </View>
+          <Pressable
+            style={styles.addButton}
+            onPress={() => router.push("/add-goal")}
+          >
+            <LinearGradient
+              colors={[Colors.cyberLime, "#B8E600"]}
+              style={styles.addButtonGradient}
+            >
+              <Ionicons name="add" size={22} color={Colors.background} />
+            </LinearGradient>
+          </Pressable>
         </View>
-        <View style={styles.streakBadge}>
-          <Ionicons name="flame" size={12} color={COLORS.black} />
-          <Text style={styles.streakText}>{currentStreak} DAY</Text>
-        </View>
-      </View>
+      </LinearGradient>
 
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabs}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: bottomPadding },
+        ]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.cyberLime}
+          />
+        }
+      >
+        {/* Master Progress Card */}
+        <Animated.View entering={FadeInDown.delay(50)}>
+          <LinearGradient
+            colors={["rgba(205, 255, 0, 0.1)", "rgba(205, 255, 0, 0.02)"]}
+            style={styles.masterCard}
+          >
+            <View style={styles.masterHeader}>
+              <View style={styles.masterInfo}>
+                <Text style={styles.masterTitle}>Year Progress</Text>
+                <Text style={styles.masterSubtitle}>
+                  {overallProgress.completed}/{overallProgress.total} goals
+                  completed
+                </Text>
+              </View>
+              <View style={styles.masterPercentContainer}>
+                <Text style={styles.masterPercent}>
+                  {overallProgress.percent}
+                </Text>
+                <Text style={styles.masterPercentSymbol}>%</Text>
+              </View>
+            </View>
+
+            <View style={styles.masterProgressBg}>
+              <LinearGradient
+                colors={[Colors.cyberLime, "#B8E600"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[
+                  styles.masterProgressFill,
+                  { width: `${Math.max(overallProgress.percent, 2)}%` },
+                ]}
+              />
+            </View>
+
+            <View style={styles.masterStats}>
+              <View style={styles.masterStatItem}>
+                <Ionicons name="flame" size={16} color={Colors.warning} />
+                <Text style={styles.masterStatValue}>{currentStreak}</Text>
+                <Text style={styles.masterStatLabel}>Streak</Text>
+              </View>
+              <View style={styles.masterStatDivider} />
+              <View style={styles.masterStatItem}>
+                <Ionicons name="trophy" size={16} color={Colors.cyberLime} />
+                <Text style={styles.masterStatValue}>{longestStreak}</Text>
+                <Text style={styles.masterStatLabel}>Best</Text>
+              </View>
+              <View style={styles.masterStatDivider} />
+              <View style={styles.masterStatItem}>
+                <Ionicons name="flag" size={16} color={Colors.info} />
+                <Text style={styles.masterStatValue}>
+                  {overallProgress.total}
+                </Text>
+                <Text style={styles.masterStatLabel}>Goals</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* Tab Navigation */}
+        <Animated.View
+          entering={FadeInDown.delay(100)}
+          style={styles.tabsContainer}
         >
-          {[
-            { key: "active", label: "ACTIVE" },
-            { key: "done", label: "DONE" },
-            { key: "stats", label: "STATS" },
-          ].map((tab) => (
+          {TABS.map((tab) => (
             <Pressable
               key={tab.key}
               style={[styles.tab, activeTab === tab.key && styles.tabActive]}
@@ -148,180 +257,211 @@ export default function GoalsScreen() {
               </Text>
             </Pressable>
           ))}
-        </ScrollView>
-      </View>
-
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: bottomPadding },
-        ]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={COLORS.black}
-          />
-        }
-      >
-        {/* Master Progress Card */}
-        <Animated.View
-          entering={FadeInDown.delay(100)}
-          style={styles.masterCard}
-        >
-          <View style={styles.masterBadge}>
-            <Text style={styles.masterBadgeText}>{currentYear} OVERALL</Text>
-          </View>
-          <Text style={styles.masterTitle}>MASTER</Text>
-          <Text style={styles.masterTitle}>PROGRESS</Text>
-          <View style={styles.masterProgressRow}>
-            <View style={styles.masterProgressBarBg}>
-              <View
-                style={[
-                  styles.masterProgressBarFill,
-                  { width: `${totalProgress}%` },
-                ]}
-              />
-            </View>
-            <Text style={styles.masterPercent}>{totalProgress}%</Text>
-          </View>
-          <View style={styles.masterEmoji}>
-            <Text style={styles.emojiText}>
-              {totalProgress >= 80 ? "🔥" : totalProgress >= 50 ? "💪" : "🎯"}
-            </Text>
-          </View>
         </Animated.View>
 
         {/* Goals List */}
         {filteredGoals.length === 0 ? (
-          <Animated.View
-            entering={FadeInDown.delay(200)}
-            style={styles.emptyState}
-          >
-            <View style={styles.emptyIcon}>
-              <Ionicons name="trophy" size={44} color={COLORS.black} />
-            </View>
-            <Text style={styles.emptyTitle}>
-              {activeTab === "done"
-                ? "No completed goals yet!"
-                : "No goals yet!"}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {activeTab === "done"
-                ? "Complete your active goals to see them here"
-                : `Set ambitious goals for ${currentYear}`}
-            </Text>
-            {activeTab === "active" && (
-              <Pressable
-                style={styles.addFirstButton}
-                onPress={() => router.push("/add-goal")}
-              >
-                <Ionicons name="add" size={18} color={COLORS.black} />
-                <Text style={styles.addFirstText}>ADD GOAL</Text>
-              </Pressable>
-            )}
+          <Animated.View entering={FadeInDown.delay(150)}>
+            <LinearGradient
+              colors={[`${Colors.cyberLime}15`, "transparent"]}
+              style={styles.emptyState}
+            >
+              <Ionicons
+                name="flag-outline"
+                size={48}
+                color={Colors.cyberLime}
+              />
+              <Text style={styles.emptyTitle}>
+                {activeTab === "completed"
+                  ? "No completed goals yet"
+                  : "No goals set"}
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                {activeTab === "completed"
+                  ? "Keep working on your active goals!"
+                  : `Set your ${currentYear} goals and start tracking`}
+              </Text>
+              {activeTab !== "completed" && (
+                <Pressable
+                  style={styles.addGoalButton}
+                  onPress={() => router.push("/add-goal")}
+                >
+                  <LinearGradient
+                    colors={[Colors.cyberLime, "#B8E600"]}
+                    style={styles.addGoalGradient}
+                  >
+                    <Ionicons name="add" size={18} color={Colors.background} />
+                    <Text style={styles.addGoalText}>Create Goal</Text>
+                  </LinearGradient>
+                </Pressable>
+              )}
+            </LinearGradient>
           </Animated.View>
         ) : (
-          filteredGoals.map((goal, index) => {
-            const progress = Math.min(
-              Math.round((goal.currentValue / goal.targetValue) * 100),
-              100
-            );
-            const isCompleted = goal.currentValue >= goal.targetValue;
+          <View style={styles.goalsList}>
+            {filteredGoals.map((goal, index) => {
+              const progress = Math.min(
+                Math.round((goal.currentValue / goal.targetValue) * 100),
+                100,
+              );
+              const isCompleted = progress >= 100;
+              const items = getGoalItems(goal.id);
+              const hasItems = items.length > 0;
+              const isExpanded = expandedGoalId === goal.id;
 
-            return (
-              <Animated.View
-                key={goal.id}
-                entering={FadeInDown.delay(200 + index * 100)}
-                style={styles.goalCard}
-              >
-                {/* Status Badge */}
-                <View
-                  style={[
-                    styles.statusBadge,
-                    isCompleted && styles.statusBadgeCompleted,
-                  ]}
+              return (
+                <Animated.View
+                  key={goal.id}
+                  entering={FadeInDown.delay(150 + index * 50)}
                 >
-                  <Text style={styles.statusText}>
-                    {isCompleted
-                      ? "✅ COMPLETED"
-                      : progress >= 75
-                      ? "🔥 ALMOST"
-                      : progress >= 50
-                      ? "ON TRACK"
-                      : "IN PROGRESS"}
-                  </Text>
-                </View>
-
-                {/* Goal Title */}
-                <View style={styles.goalTitleRow}>
-                  <Text style={styles.goalTitle}>
-                    {goal.title.toUpperCase()}
-                  </Text>
-                  <View style={styles.goalIconBox}>
-                    <Ionicons
-                      name={getGoalIcon(goal.title) as any}
-                      size={22}
-                      color={COLORS.white}
-                    />
-                  </View>
-                </View>
-
-                {/* Progress Section */}
-                <View style={styles.progressSection}>
-                  <Text style={styles.progressLabel}>PROGRESS</Text>
-                  <Text style={styles.progressValue}>
-                    {goal.currentValue}/{goal.targetValue} {goal.unit || ""}
-                  </Text>
-                </View>
-
-                {/* Progress Bar */}
-                <View style={styles.progressBarBg}>
-                  <View
-                    style={[styles.progressBarFill, { width: `${progress}%` }]}
-                  />
-                </View>
-
-                {/* Update/Complete Button */}
-                {!isCompleted ? (
                   <Pressable
-                    style={styles.updateButton}
-                    onPress={() =>
-                      handleUpdateProgress(
-                        goal.id,
-                        goal.currentValue,
-                        goal.targetValue
-                      )
-                    }
+                    style={styles.goalCard}
+                    onPress={() => handleGoalPress(goal.id)}
+                    onLongPress={() => handleGoalOptions(goal.id)}
                   >
-                    <Text style={styles.updateButtonText}>
-                      LOG +1 {goal.unit?.toUpperCase() || ""}
-                    </Text>
+                    <View style={styles.goalHeader}>
+                      <View
+                        style={[
+                          styles.goalIconContainer,
+                          isCompleted && styles.goalIconCompleted,
+                        ]}
+                      >
+                        <Text style={styles.goalIconEmoji}>
+                          {goal.icon || "🎯"}
+                        </Text>
+                      </View>
+                      <View style={styles.goalInfo}>
+                        <Text style={styles.goalTitle} numberOfLines={1}>
+                          {goal.title}
+                        </Text>
+                        <View style={styles.goalBadges}>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              isCompleted && styles.statusBadgeCompleted,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusBadgeText,
+                                isCompleted && styles.statusBadgeTextCompleted,
+                              ]}
+                            >
+                              {isCompleted ? "Completed" : "In Progress"}
+                            </Text>
+                          </View>
+                          <View style={styles.itemsBadge}>
+                            <Ionicons
+                              name={
+                                goal.targetType === "numeric"
+                                  ? "stats-chart"
+                                  : "list"
+                              }
+                              size={10}
+                              color={Colors.textSecondary}
+                            />
+                            <Text style={styles.itemsBadgeText}>
+                              {goal.targetType === "numeric"
+                                ? "Value"
+                                : "Items"}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                      <Pressable
+                        style={styles.moreButton}
+                        onPress={() => handleGoalOptions(goal.id)}
+                      >
+                        <Ionicons
+                          name="ellipsis-vertical"
+                          size={18}
+                          color={Colors.textMuted}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.goalProgressSection}>
+                      <View style={styles.goalProgressInfo}>
+                        <Text style={styles.goalProgressText}>
+                          {goal.currentValue} / {goal.targetValue} {goal.unit}
+                        </Text>
+                        <Text style={styles.goalProgressPercent}>
+                          {progress}%
+                        </Text>
+                      </View>
+                      <View style={styles.goalProgressBg}>
+                        <LinearGradient
+                          colors={
+                            isCompleted
+                              ? [Colors.success, "#22C55E"]
+                              : [Colors.cyberLime, "#B8E600"]
+                          }
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={[
+                            styles.goalProgressFill,
+                            { width: `${Math.max(progress, 2)}%` },
+                          ]}
+                        />
+                      </View>
+                    </View>
                   </Pressable>
-                ) : (
-                  <View style={styles.completedBanner}>
-                    <Ionicons name="trophy" size={18} color={COLORS.black} />
-                    <Text style={styles.completedText}>GOAL ACHIEVED! 🎉</Text>
-                  </View>
-                )}
-              </Animated.View>
-            );
-          })
+
+                  {/* Expanded Options */}
+                  {isExpanded && (
+                    <Animated.View
+                      entering={FadeInRight.duration(200)}
+                      style={styles.goalActions}
+                    >
+                      <Pressable
+                        style={styles.actionButton}
+                        onPress={() => handleGoalPress(goal.id)}
+                      >
+                        <Ionicons
+                          name="eye-outline"
+                          size={18}
+                          color={Colors.info}
+                        />
+                        <Text
+                          style={[styles.actionText, { color: Colors.info }]}
+                        >
+                          View
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.actionButton}
+                        onPress={() => handleDeleteGoal(goal)}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={18}
+                          color={Colors.error}
+                        />
+                        <Text
+                          style={[styles.actionText, { color: Colors.error }]}
+                        >
+                          Delete
+                        </Text>
+                      </Pressable>
+                    </Animated.View>
+                  )}
+                </Animated.View>
+              );
+            })}
+          </View>
         )}
 
-        {/* Add Goal Card */}
-        {filteredGoals.length > 0 && activeTab === "active" && (
+        {/* Add More Button */}
+        {filteredGoals.length > 0 && (
           <Animated.View entering={FadeInDown.delay(400)}>
             <Pressable
-              style={styles.addGoalCard}
+              style={styles.addMoreCard}
               onPress={() => router.push("/add-goal")}
             >
-              <View style={styles.addIconContainer}>
-                <Ionicons name="add" size={28} color={COLORS.black} />
+              <View style={styles.addMoreIcon}>
+                <Ionicons name="add" size={20} color={Colors.background} />
               </View>
-              <Text style={styles.addGoalText}>ADD NEW GOAL</Text>
+              <Text style={styles.addMoreText}>Add New Goal</Text>
             </Pressable>
           </Animated.View>
         )}
@@ -333,325 +473,351 @@ export default function GoalsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: Colors.background,
+  },
+  headerGradient: {
+    paddingBottom: Spacing.sm,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   headerLeft: {
-    flexDirection: "row",
-    alignItems: "baseline",
+    flex: 1,
+  },
+  headerSubtitle: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "500",
-    color: COLORS.black,
+    fontSize: Typography.sizes["2xl"],
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+    marginTop: 2,
   },
-  headerTitleBold: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: COLORS.black,
+  addButton: {
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
   },
-  streakBadge: {
-    flexDirection: "row",
+  addButtonGradient: {
+    width: 44,
+    height: 44,
+    justifyContent: "center",
     alignItems: "center",
-    backgroundColor: COLORS.pastelGreen,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    gap: 4,
-  },
-  streakText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: COLORS.black,
-  },
-  tabsContainer: {
-    paddingVertical: 6,
-  },
-  tabs: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  tab: {
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-  },
-  tabActive: {
-    backgroundColor: COLORS.black,
-  },
-  tabText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: COLORS.black,
-  },
-  tabTextActive: {
-    color: COLORS.white,
   },
   scrollView: {
     flex: 1,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: Spacing.lg,
   },
   masterCard: {
-    backgroundColor: COLORS.pastelYellow,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    position: "relative",
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.cyberLime,
   },
-  masterBadge: {
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    alignSelf: "flex-start",
-    marginBottom: 8,
-  },
-  masterBadgeText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: COLORS.black,
-  },
-  masterTitle: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: COLORS.black,
-    lineHeight: 30,
-  },
-  masterProgressRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 12,
-  },
-  masterProgressBarBg: {
-    flex: 1,
-    height: 12,
-    backgroundColor: COLORS.white,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    overflow: "hidden",
-  },
-  masterProgressBarFill: {
-    height: "100%",
-    backgroundColor: COLORS.pastelGreen,
-  },
-  masterPercent: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  masterEmoji: {
-    position: "absolute",
-    right: 14,
-    bottom: 14,
-  },
-  emojiText: {
-    fontSize: 36,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: 36,
-  },
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 18,
-    backgroundColor: COLORS.white,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 14,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: COLORS.black,
-    marginBottom: 6,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: COLORS.muted,
-    textAlign: "center",
-    marginBottom: 18,
-  },
-  addFirstButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: COLORS.pastelGreen,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    gap: 6,
-  },
-  addFirstText: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  goalCard: {
-    backgroundColor: COLORS.darkCard,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-  },
-  statusBadge: {
-    backgroundColor: COLORS.pastelGreen,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    alignSelf: "flex-start",
-    marginBottom: 10,
-  },
-  statusBadgeCompleted: {
-    backgroundColor: COLORS.pastelYellow,
-  },
-  statusText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: COLORS.black,
-  },
-  goalTitleRow: {
+  masterHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 14,
+    marginBottom: Spacing.lg,
   },
-  goalTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: COLORS.white,
+  masterInfo: {
     flex: 1,
-    marginRight: 10,
   },
-  goalIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
+  masterTitle: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
   },
-  progressSection: {
-    marginBottom: 10,
+  masterSubtitle: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
-  progressLabel: {
-    fontSize: 9,
-    fontWeight: "700",
-    color: "rgba(255,255,255,0.5)",
-    letterSpacing: 0.5,
-    marginBottom: 2,
+  masterPercentContainer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
   },
-  progressValue: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: COLORS.white,
+  masterPercent: {
+    fontSize: Typography.sizes["4xl"],
+    fontFamily: Typography.fonts.number,
+    color: Colors.cyberLime,
+    lineHeight: Typography.sizes["4xl"] * 1.1,
   },
-  progressBarBg: {
+  masterPercentSymbol: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.number,
+    color: Colors.cyberLime,
+    marginTop: 4,
+  },
+  masterProgressBg: {
     height: 10,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 5,
-    marginBottom: 12,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+    marginBottom: Spacing.lg,
+  },
+  masterProgressFill: {
+    height: "100%",
+    borderRadius: BorderRadius.full,
+  },
+  masterStats: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
+  },
+  masterStatItem: {
+    alignItems: "center",
+    flex: 1,
+    gap: 4,
+  },
+  masterStatValue: {
+    fontSize: Typography.sizes.xl,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
+  },
+  masterStatLabel: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+  },
+  masterStatDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: Colors.borderDefault,
+  },
+  tabsContainer: {
+    flexDirection: "row",
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xs,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    alignItems: "center",
+    borderRadius: BorderRadius.md,
+  },
+  tabActive: {
+    backgroundColor: Colors.cyberLime,
+  },
+  tabText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
+  },
+  tabTextActive: {
+    color: Colors.background,
+  },
+  emptyState: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing["3xl"],
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  emptyTitle: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  emptySubtitle: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    marginBottom: Spacing["2xl"],
+  },
+  addGoalButton: {
+    borderRadius: BorderRadius.full,
     overflow: "hidden",
   },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: COLORS.pastelGreen,
-    borderRadius: 5,
-  },
-  updateButton: {
-    backgroundColor: COLORS.white,
-    borderRadius: 50,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: COLORS.black,
-  },
-  updateButtonText: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  completedBanner: {
+  addGoalGradient: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.pastelYellow,
-    borderRadius: 50,
-    paddingVertical: 12,
-    gap: 6,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-  },
-  completedText: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  addGoalCard: {
-    backgroundColor: COLORS.pastelGreen,
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  addIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    justifyContent: "center",
-    alignItems: "center",
+    paddingHorizontal: Spacing["2xl"],
+    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
   },
   addGoalText: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.background,
+  },
+  goalsList: {
+    gap: Spacing.md,
+  },
+  goalCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  goalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: Spacing.md,
+    gap: Spacing.md,
+  },
+  goalIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.cyberLimeLight,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  goalIconEmoji: {
+    fontSize: 20,
+  },
+  goalIconCompleted: {
+    backgroundColor: Colors.success,
+    borderWidth: 0,
+  },
+  goalInfo: {
+    flex: 1,
+  },
+  goalTitle: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
+  },
+  goalBadges: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  statusBadge: {
+    backgroundColor: Colors.cyberLimeLight,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  statusBadgeCompleted: {
+    backgroundColor: `${Colors.success}20`,
+  },
+  statusBadgeText: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.cyberLime,
+  },
+  statusBadgeTextCompleted: {
+    color: Colors.success,
+  },
+  itemsBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  itemsBadgeText: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textSecondary,
+  },
+  moreButton: {
+    padding: Spacing.xs,
+  },
+  goalProgressSection: {
+    marginTop: Spacing.sm,
+  },
+  goalProgressInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  goalProgressText: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
+  },
+  goalProgressPercent: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.number,
+    color: Colors.cyberLime,
+  },
+  goalProgressBg: {
+    height: 8,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+  },
+  goalProgressFill: {
+    height: "100%",
+    borderRadius: BorderRadius.full,
+  },
+  goalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    backgroundColor: Colors.surfaceElevated,
+    padding: Spacing.sm,
+    marginTop: -1,
+    borderBottomLeftRadius: BorderRadius.xl,
+    borderBottomRightRadius: BorderRadius.xl,
+    gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    borderTopWidth: 0,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+  },
+  actionText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+  },
+  addMoreCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    borderStyle: "dashed",
+    marginTop: Spacing.md,
+  },
+  addMoreIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.cyberLime,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addMoreText: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
   },
 });

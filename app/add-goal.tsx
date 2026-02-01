@@ -15,28 +15,67 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { BorderRadius, Colors, Spacing, Typography } from "@/constants/design";
 import { useApp } from "@/context/AppContext";
 
-// Neo-Brutalism Vibrant Colors
-const COLORS = {
-  bg: "#FFB1D8",
-  pastelGreen: "#C1FF72",
-  pastelYellow: "#FDFD96",
-  pastelBlue: "#A0D7FF",
-  pastelPurple: "#C5B4E3",
-  white: "#FFFFFF",
-  black: "#000000",
-  darkCard: "#1a1a2e",
-  muted: "rgba(0,0,0,0.6)",
-};
-
 const GOAL_PRESETS = [
-  { title: "Read books", icon: "📚", unit: "books", defaultTarget: 52 },
-  { title: "Workout", icon: "💪", unit: "sessions", defaultTarget: 200 },
-  { title: "Meditate", icon: "🧘", unit: "sessions", defaultTarget: 365 },
-  { title: "Running", icon: "🏃", unit: "miles", defaultTarget: 500 },
-  { title: "Code", icon: "💻", unit: "projects", defaultTarget: 12 },
-  { title: "Save money", icon: "💰", unit: "$", defaultTarget: 10000 },
+  {
+    title: "Read books",
+    icon: "📚",
+    unit: "books",
+    defaultTarget: 52,
+    trackItems: true,
+  },
+  {
+    title: "Listen to podcasts",
+    icon: "🎧",
+    unit: "episodes",
+    defaultTarget: 100,
+    trackItems: true,
+  },
+  {
+    title: "Workout",
+    icon: "💪",
+    unit: "sessions",
+    defaultTarget: 200,
+    trackItems: false,
+  },
+  {
+    title: "Watch movies",
+    icon: "🎬",
+    unit: "movies",
+    defaultTarget: 50,
+    trackItems: true,
+  },
+  {
+    title: "Complete courses",
+    icon: "🎓",
+    unit: "courses",
+    defaultTarget: 12,
+    trackItems: true,
+  },
+  {
+    title: "Save money",
+    icon: "💰",
+    unit: "$",
+    defaultTarget: 10000,
+    trackItems: false,
+  },
+];
+
+const EMOJI_OPTIONS = [
+  "🎯",
+  "💪",
+  "📚",
+  "💰",
+  "🏃",
+  "🥗",
+  "🎸",
+  "💻",
+  "🎨",
+  "🧩",
+  "⚽",
+  "🧘",
 ];
 
 export default function AddGoalScreen() {
@@ -45,6 +84,8 @@ export default function AddGoalScreen() {
   const [title, setTitle] = useState("");
   const [targetValue, setTargetValue] = useState("");
   const [unit, setUnit] = useState("");
+  const [targetType, setTargetType] = useState<"numeric" | "items">("numeric");
+  const [selectedEmoji, setSelectedEmoji] = useState("🎯");
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -56,6 +97,8 @@ export default function AddGoalScreen() {
     setTitle(preset.title);
     setUnit(preset.unit);
     setTargetValue(preset.defaultTarget.toString());
+    setTargetType(preset.trackItems ? "items" : "numeric");
+    setSelectedEmoji(preset.icon);
     Haptics.selectionAsync();
   };
 
@@ -73,13 +116,16 @@ export default function AddGoalScreen() {
         title: title.trim(),
         description: "",
         year: currentYear,
-        targetType: "numeric",
+        icon: selectedEmoji,
+        targetType,
         targetValue: parseInt(targetValue),
         currentValue: 0,
         unit: unit.trim() || undefined,
         milestones: [],
         linkedTaskIds: [],
         isArchived: false,
+        trackItems: targetType === "items",
+        items: [],
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -95,18 +141,21 @@ export default function AddGoalScreen() {
   const isValid = title.trim() && targetValue && parseInt(targetValue) > 0;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+    <SafeAreaView
+      style={styles.container}
+      edges={["top", "left", "right", "bottom"]}
+    >
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.keyboardView}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         {/* Header */}
         <View style={styles.header}>
           <Pressable style={styles.closeButton} onPress={() => router.back()}>
-            <Ionicons name="close" size={24} color={COLORS.black} />
+            <Ionicons name="close" size={22} color={Colors.textPrimary} />
           </Pressable>
-          <Text style={styles.headerTitle}>NEW GOAL</Text>
-          <View style={{ width: 48 }} />
+          <Text style={styles.headerTitle}>New Goal</Text>
+          <View style={styles.headerRight} />
         </View>
 
         <ScrollView
@@ -121,19 +170,20 @@ export default function AddGoalScreen() {
             style={styles.yearSection}
           >
             <View style={styles.yearBadge}>
-              <Text style={styles.yearText}>{currentYear} GOAL</Text>
+              <Ionicons name="flag" size={14} color={Colors.background} />
+              <Text style={styles.yearText}>{currentYear} Goal</Text>
             </View>
             <Text style={styles.subtitle}>
-              Set a target and track your progress
+              Set a target and track your progress throughout the year
             </Text>
           </Animated.View>
 
-          {/* Presets */}
+          {/* Quick Start */}
           <Animated.View
             entering={FadeInDown.delay(100)}
             style={styles.section}
           >
-            <Text style={styles.label}>QUICK START</Text>
+            <Text style={styles.label}>Quick Start</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -149,10 +199,54 @@ export default function AddGoalScreen() {
                   onPress={() => handlePresetSelect(index)}
                 >
                   <Text style={styles.presetIcon}>{preset.icon}</Text>
-                  <Text style={styles.presetTitle}>{preset.title}</Text>
+                  <Text
+                    style={[
+                      styles.presetTitle,
+                      selectedPreset === index && styles.presetTitleSelected,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {preset.title}
+                  </Text>
                 </Pressable>
               ))}
             </ScrollView>
+          </Animated.View>
+
+          {/* Emoji Selection */}
+          <Animated.View
+            entering={FadeInDown.delay(125)}
+            style={styles.section}
+          >
+            <Text style={styles.label}>Goal Icon / Emoji</Text>
+            <View style={styles.emojiGrid}>
+              {EMOJI_OPTIONS.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  style={[
+                    styles.emojiItem,
+                    selectedEmoji === emoji && styles.emojiItemSelected,
+                  ]}
+                  onPress={() => {
+                    setSelectedEmoji(emoji);
+                    Haptics.selectionAsync();
+                  }}
+                >
+                  <Text style={styles.emojiText}>{emoji}</Text>
+                </Pressable>
+              ))}
+              <View style={styles.customEmojiContainer}>
+                <TextInput
+                  style={styles.customEmojiInput}
+                  maxLength={2}
+                  placeholder="+"
+                  placeholderTextColor={Colors.textMuted}
+                  onChangeText={(text) => {
+                    if (text) setSelectedEmoji(text);
+                  }}
+                />
+              </View>
+            </View>
           </Animated.View>
 
           {/* Title */}
@@ -160,7 +254,7 @@ export default function AddGoalScreen() {
             entering={FadeInDown.delay(150)}
             style={styles.section}
           >
-            <Text style={styles.label}>GOAL TITLE</Text>
+            <Text style={styles.label}>Goal Title</Text>
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
@@ -170,8 +264,74 @@ export default function AddGoalScreen() {
                   setSelectedPreset(null);
                 }}
                 placeholder="What do you want to achieve?"
-                placeholderTextColor={COLORS.muted}
+                placeholderTextColor={Colors.textMuted}
               />
+            </View>
+          </Animated.View>
+
+          {/* Type Selection */}
+          <Animated.View
+            entering={FadeInDown.delay(175)}
+            style={styles.section}
+          >
+            <Text style={styles.label}>Tracking Mode</Text>
+            <View style={styles.typeGrid}>
+              <Pressable
+                style={[
+                  styles.typeCard,
+                  targetType === "numeric" && styles.typeCardActive,
+                ]}
+                onPress={() => {
+                  setTargetType("numeric");
+                  Haptics.selectionAsync();
+                }}
+              >
+                <Ionicons
+                  name="stats-chart"
+                  size={20}
+                  color={
+                    targetType === "numeric"
+                      ? Colors.background
+                      : Colors.textSecondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.typeCardText,
+                    targetType === "numeric" && styles.typeCardTextActive,
+                  ]}
+                >
+                  Value
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.typeCard,
+                  targetType === "items" && styles.typeCardActive,
+                ]}
+                onPress={() => {
+                  setTargetType("items");
+                  Haptics.selectionAsync();
+                }}
+              >
+                <Ionicons
+                  name="list"
+                  size={20}
+                  color={
+                    targetType === "items"
+                      ? Colors.background
+                      : Colors.textSecondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.typeCardText,
+                    targetType === "items" && styles.typeCardTextActive,
+                  ]}
+                >
+                  Items
+                </Text>
+              </Pressable>
             </View>
           </Animated.View>
 
@@ -180,7 +340,7 @@ export default function AddGoalScreen() {
             entering={FadeInDown.delay(200)}
             style={styles.section}
           >
-            <Text style={styles.label}>TARGET</Text>
+            <Text style={styles.label}>Target</Text>
             <View style={styles.targetRow}>
               <View style={[styles.inputContainer, { flex: 1 }]}>
                 <TextInput
@@ -188,7 +348,7 @@ export default function AddGoalScreen() {
                   value={targetValue}
                   onChangeText={setTargetValue}
                   placeholder="52"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={Colors.textMuted}
                   keyboardType="number-pad"
                 />
               </View>
@@ -197,32 +357,88 @@ export default function AddGoalScreen() {
                   style={styles.input}
                   value={unit}
                   onChangeText={setUnit}
-                  placeholder="books, miles, etc."
-                  placeholderTextColor={COLORS.muted}
+                  placeholder={
+                    targetType === "numeric"
+                      ? "miles, $, etc."
+                      : "books, movies, etc."
+                  }
+                  placeholderTextColor={Colors.textMuted}
                 />
               </View>
             </View>
+            <Text style={styles.helperText}>
+              {targetType === "numeric"
+                ? "Enter your total target value. You can add progress periodically."
+                : "Enter the number of items you want to complete. You'll add them to a list."}
+            </Text>
           </Animated.View>
+
+          {/* Preview */}
+          {isValid && (
+            <Animated.View
+              entering={FadeInDown.delay(300)}
+              style={styles.section}
+            >
+              <Text style={styles.label}>Preview</Text>
+              <View style={styles.previewCard}>
+                <View style={styles.previewHeader}>
+                  <View style={styles.previewIconContainer}>
+                    <Text style={styles.previewEmoji}>{selectedEmoji}</Text>
+                  </View>
+                  <View style={styles.previewInfo}>
+                    <Text style={styles.previewTitle}>{title}</Text>
+                    <View style={styles.previewBadgeRow}>
+                      <View style={styles.previewBadge}>
+                        <Ionicons
+                          name={
+                            targetType === "numeric" ? "stats-chart" : "list"
+                          }
+                          size={10}
+                          color={Colors.cyberLime}
+                        />
+                        <Text style={styles.previewBadgeText}>
+                          {targetType === "numeric"
+                            ? "Value Tracking"
+                            : "Item Checklist"}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.previewProgress}>
+                  <Text style={styles.previewProgressText}>
+                    0 / {targetValue} {unit}
+                  </Text>
+                  <Text style={styles.previewProgressPercent}>0%</Text>
+                </View>
+                <View style={styles.previewProgressBarBg}>
+                  <View style={styles.previewProgressBarFill} />
+                </View>
+              </View>
+            </Animated.View>
+          )}
         </ScrollView>
 
-        {/* Submit */}
-        <SafeAreaView edges={["bottom"]} style={styles.footerSafeArea}>
-          <Animated.View entering={FadeInDown.delay(250)} style={styles.footer}>
-            <Pressable
-              style={[
-                styles.submitButton,
-                (!isValid || isSubmitting) && styles.submitButtonDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={!isValid || isSubmitting}
-            >
-              <Ionicons name="add" size={24} color={COLORS.white} />
-              <Text style={styles.submitButtonText}>
-                {isSubmitting ? "CREATING..." : "CREATE GOAL"}
-              </Text>
-            </Pressable>
-          </Animated.View>
-        </SafeAreaView>
+        {/* Submit Button */}
+        <View style={styles.footer}>
+          <Pressable
+            style={[
+              styles.submitButton,
+              (!isValid || isSubmitting) && styles.submitButtonDisabled,
+            ]}
+            onPress={handleSubmit}
+            disabled={!isValid || isSubmitting}
+          >
+            <Ionicons
+              name="checkmark-circle"
+              size={20}
+              color={Colors.background}
+            />
+            <Text style={styles.submitButtonText}>
+              {isSubmitting ? "Creating..." : "Create Goal"}
+            </Text>
+          </Pressable>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -231,168 +447,310 @@ export default function AddGoalScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: Colors.background,
+  },
+  keyboardView: {
+    flex: 1,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 3,
-    borderBottomColor: COLORS.black,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDefault,
   },
   closeButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
-    borderWidth: 3,
-    borderColor: COLORS.black,
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: COLORS.black,
-    letterSpacing: 0.5,
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+  },
+  headerRight: {
+    width: 40,
   },
   scrollView: {
     flex: 1,
   },
   content: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: Spacing.lg,
+    paddingBottom: Spacing["3xl"],
   },
   yearSection: {
-    marginBottom: 24,
+    marginBottom: Spacing["2xl"],
   },
   yearBadge: {
-    backgroundColor: COLORS.pastelYellow,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 50,
-    borderWidth: 3,
-    borderColor: COLORS.black,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    backgroundColor: Colors.cyberLime,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
     alignSelf: "flex-start",
-    marginBottom: 10,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    marginBottom: Spacing.md,
   },
   yearText: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: COLORS.black,
-    letterSpacing: 0.5,
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.background,
   },
   subtitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: COLORS.muted,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    lineHeight: 22,
   },
   section: {
-    marginBottom: 22,
+    marginBottom: Spacing["2xl"],
   },
   label: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: COLORS.muted,
-    letterSpacing: 1.5,
-    marginBottom: 12,
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.md,
   },
   presetsRow: {
-    gap: 10,
+    gap: Spacing.md,
   },
   presetCard: {
-    width: 95,
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: COLORS.white,
-    borderWidth: 3,
-    borderColor: COLORS.black,
+    width: 90,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     alignItems: "center",
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
   },
   presetCardSelected: {
-    backgroundColor: COLORS.pastelGreen,
+    backgroundColor: Colors.cyberLimeLight,
+    borderColor: Colors.cyberLime,
   },
   presetIcon: {
     fontSize: 28,
-    marginBottom: 6,
+    marginBottom: Spacing.sm,
   },
   presetTitle: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: COLORS.black,
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
     textAlign: "center",
   },
+  presetTitleSelected: {
+    color: Colors.textPrimary,
+  },
   inputContainer: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   input: {
-    padding: 16,
-    fontSize: 15,
-    color: COLORS.black,
-    fontWeight: "700",
+    padding: Spacing.lg,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodyMedium,
+    color: Colors.textPrimary,
   },
   targetRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: Spacing.md,
   },
   targetInput: {
     textAlign: "center",
-    fontSize: 24,
-    fontWeight: "900",
+    fontSize: Typography.sizes["2xl"],
+    fontFamily: Typography.fonts.number,
   },
-  footerSafeArea: {
-    backgroundColor: COLORS.bg,
+  helperText: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
+    marginTop: Spacing.sm,
+    lineHeight: 16,
+  },
+  emojiGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  emojiItem: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  emojiItemSelected: {
+    backgroundColor: Colors.cyberLimeLight,
+    borderWidth: 1,
+    borderColor: Colors.cyberLime,
+  },
+  emojiText: {
+    fontSize: 20,
+  },
+  customEmojiContainer: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  customEmojiInput: {
+    fontSize: 18,
+    textAlign: "center",
+    color: Colors.textPrimary,
+    width: "100%",
+  },
+  typeGrid: {
+    flexDirection: "row",
+    gap: Spacing.md,
+  },
+  typeCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  typeCardActive: {
+    backgroundColor: Colors.cyberLime,
+    borderColor: Colors.cyberLime,
+  },
+  typeCardText: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
+  },
+  typeCardTextActive: {
+    color: Colors.background,
+  },
+  previewCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  previewHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  previewIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  previewEmoji: {
+    fontSize: 24,
+  },
+  previewInfo: {
+    flex: 1,
+  },
+  previewTitle: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
+  },
+  previewBadgeRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  previewBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.cyberLimeLight,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  previewBadgeText: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.cyberLime,
+  },
+  previewProgress: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: Spacing.sm,
+  },
+  previewProgressText: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
+  },
+  previewProgressPercent: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.number,
+    color: Colors.cyberLime,
+  },
+  previewProgressBarBg: {
+    height: 8,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+  },
+  previewProgressBarFill: {
+    width: "5%",
+    height: "100%",
+    backgroundColor: Colors.cyberLime,
+    borderRadius: BorderRadius.full,
   },
   footer: {
-    padding: 20,
-    paddingTop: 12,
-    borderTopWidth: 3,
-    borderTopColor: COLORS.black,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderDefault,
+    backgroundColor: Colors.background,
   },
   submitButton: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: COLORS.darkCard,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    gap: 10,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    backgroundColor: Colors.cyberLime,
+    paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.sm,
   },
   submitButtonDisabled: {
     opacity: 0.4,
-    shadowOpacity: 0,
   },
   submitButtonText: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: COLORS.white,
-    letterSpacing: 0.5,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.background,
   },
 });

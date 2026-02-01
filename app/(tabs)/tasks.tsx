@@ -1,8 +1,10 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
+  Alert,
   Platform,
   Pressable,
   RefreshControl,
@@ -11,68 +13,61 @@ import {
   Text,
   View,
 } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeInRight } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import {
+  BorderRadius,
+  Colors,
+  Layout,
+  Spacing,
+  Typography,
+  getCategoryColor,
+} from "@/constants/design";
 import { useApp } from "@/context/AppContext";
-import { getToday } from "@/lib/dates";
-import type { Task } from "@/types";
+import type { Task, TaskFrequency, TimeOfDay } from "@/types";
 
-// Neo-Brutalism Vibrant Colors
-const COLORS = {
-  bg: "#FDFD96",
-  pastelGreen: "#C1FF72",
-  pastelPurple: "#C5B4E3",
-  pastelPink: "#FFB1D8",
-  pastelBlue: "#A0D7FF",
-  white: "#FFFFFF",
-  black: "#000000",
-  darkCard: "#1a1a2e",
-  muted: "rgba(0,0,0,0.5)",
-  orange: "#ff7b00",
-};
+type FilterType = "all" | TaskFrequency;
+
+const FILTER_OPTIONS: {
+  key: FilterType;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { key: "all", label: "All", icon: "apps-outline" },
+  { key: "daily", label: "Daily", icon: "today-outline" },
+  { key: "weekly", label: "Weekly", icon: "calendar-outline" },
+  { key: "monthly", label: "Monthly", icon: "calendar-number-outline" },
+];
+
+const TIME_SECTIONS: {
+  key: TimeOfDay;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { key: "morning", label: "Morning", icon: "sunny-outline" },
+  { key: "afternoon", label: "Afternoon", icon: "partly-sunny-outline" },
+  { key: "evening", label: "Evening", icon: "moon-outline" },
+  { key: "anytime", label: "Anytime", icon: "time-outline" },
+];
 
 export default function TasksScreen() {
   const {
     tasks,
     completions,
+    currentStreak,
+    todayCompletionRate,
     completeTask,
     uncompleteTask,
+    deleteTask,
     refreshData,
-    currentStreak,
+    getCompletionsForDate,
   } = useApp();
 
   const [refreshing, setRefreshing] = useState(false);
-  const today = getToday();
-
-  // Get completions for today
-  const todayCompletions = useMemo(() => {
-    return completions.filter((c) => c.date === today);
-  }, [completions, today]);
-
-  const completedTaskIds = useMemo(() => {
-    return new Set(todayCompletions.map((c) => c.taskId));
-  }, [todayCompletions]);
-
-  // Group tasks by time of day
-  const groupedTasks = useMemo(() => {
-    const groups: Record<string, Task[]> = {
-      morning: [],
-      afternoon: [],
-      evening: [],
-    };
-
-    tasks.forEach((task) => {
-      const time = task.timeOfDay === "anytime" ? "morning" : task.timeOfDay;
-      if (groups[time]) {
-        groups[time].push(task);
-      } else {
-        groups.morning.push(task);
-      }
-    });
-
-    return groups;
-  }, [tasks]);
+  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const today = new Date().toISOString().split("T")[0];
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -80,123 +75,161 @@ export default function TasksScreen() {
     setRefreshing(false);
   }, [refreshData]);
 
+  const todaysCompletions = useMemo(
+    () => getCompletionsForDate(today),
+    [getCompletionsForDate, today],
+  );
+
+  const isTaskCompleted = useCallback(
+    (taskId: string) => todaysCompletions.some((c) => c.taskId === taskId),
+    [todaysCompletions],
+  );
+
   const handleToggleTask = useCallback(
     async (task: Task) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const isCompleted = completedTaskIds.has(task.id);
-      if (isCompleted) {
+      if (isTaskCompleted(task.id)) {
         await uncompleteTask(task.id);
       } else {
         await completeTask(task.id);
       }
     },
-    [completedTaskIds, completeTask, uncompleteTask]
+    [isTaskCompleted, completeTask, uncompleteTask],
   );
 
-  // Calculate progress
-  const totalTasks = tasks.length;
-  const completedCount = todayCompletions.length;
-  const progressPercent =
-    totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;
-
-  // Get day info
-  const dayNames = [
-    "SUNDAY",
-    "MONDAY",
-    "TUESDAY",
-    "WEDNESDAY",
-    "THURSDAY",
-    "FRIDAY",
-    "SATURDAY",
-  ];
-  const monthNames = [
-    "JAN",
-    "FEB",
-    "MAR",
-    "APR",
-    "MAY",
-    "JUN",
-    "JUL",
-    "AUG",
-    "SEP",
-    "OCT",
-    "NOV",
-    "DEC",
-  ];
-  const now = new Date();
-  const dayName = dayNames[now.getDay()];
-  const monthName = monthNames[now.getMonth()];
-
-  // Calculate task streak from real completion data
-  const getTaskStreak = useCallback(
-    (taskId: string): number => {
-      let streak = 0;
-      const todayDate = new Date();
-
-      for (let i = 0; i < 365; i++) {
-        const checkDate = new Date(todayDate);
-        checkDate.setDate(checkDate.getDate() - i);
-        const dateStr = checkDate.toISOString().split("T")[0];
-
-        const hasCompletion = completions.some(
-          (c) => c.taskId === taskId && c.date === dateStr
-        );
-
-        if (hasCompletion) {
-          streak++;
-        } else if (i > 0) {
-          // Break if not completed (allow today to be incomplete)
-          break;
-        }
-      }
-
-      return streak;
+  const handleDeleteTask = useCallback(
+    (task: Task) => {
+      Alert.alert(
+        "Delete Habit",
+        `Are you sure you want to delete "${task.name}"? This action cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Warning,
+              );
+              await deleteTask(task.id);
+              setExpandedTaskId(null);
+            },
+          },
+        ],
+      );
     },
-    [completions]
+    [deleteTask],
   );
 
-  // Tab bar dimensions
-  const TAB_BAR_HEIGHT = 64;
-  const BOTTOM_MARGIN = Platform.OS === "ios" ? 24 : 12;
-  const bottomPadding = TAB_BAR_HEIGHT + BOTTOM_MARGIN + 80;
+  const handleTaskOptions = useCallback(
+    (task: Task) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setExpandedTaskId(expandedTaskId === task.id ? null : task.id);
+    },
+    [expandedTaskId],
+  );
 
-  const TIME_SECTIONS = [
-    {
-      key: "morning",
-      icon: "sunny" as const,
-      label: "MORNING RITUALS",
-      color: "#ffd33d",
-    },
-    {
-      key: "afternoon",
-      icon: "partly-sunny" as const,
-      label: "MIDDAY HUSTLE",
-      color: "#ff9500",
-    },
-    {
-      key: "evening",
-      icon: "moon" as const,
-      label: "EVENING WIND DOWN",
-      color: "#6366f1",
-    },
-  ];
+  // Filter tasks by frequency
+  const filteredTasks = useMemo(() => {
+    if (activeFilter === "all") return tasks;
+    return tasks.filter((t) => t.frequency === activeFilter);
+  }, [tasks, activeFilter]);
+
+  // Group tasks by time of day
+  const groupedTasks = useMemo(() => {
+    const groups: Record<TimeOfDay, Task[]> = {
+      morning: [],
+      afternoon: [],
+      evening: [],
+      anytime: [],
+    };
+
+    filteredTasks.forEach((task) => {
+      groups[task.timeOfDay].push(task);
+    });
+
+    return groups;
+  }, [filteredTasks]);
+
+  // Calculate progress for filtered tasks
+  const filteredProgress = useMemo(() => {
+    if (filteredTasks.length === 0) return 0;
+    const completed = filteredTasks.filter((t) => isTaskCompleted(t.id)).length;
+    return Math.round((completed / filteredTasks.length) * 100);
+  }, [filteredTasks, isTaskCompleted]);
+
+  const completedCount = filteredTasks.filter((t) =>
+    isTaskCompleted(t.id),
+  ).length;
+
+  const TAB_BAR_HEIGHT = Layout.tabBarHeight;
+  const bottomPadding = TAB_BAR_HEIGHT + (Platform.OS === "ios" ? 24 : 16) + 20;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.dateLabel}>
-            {dayName}, {monthName} {now.getDate()}
-          </Text>
-          <Text style={styles.headerTitle}>Daily Tasks</Text>
+      <LinearGradient
+        colors={[Colors.surface, Colors.background]}
+        style={styles.headerGradient}
+      >
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerSubtitle}>Today's</Text>
+            <Text style={styles.headerTitle}>Habits</Text>
+          </View>
+          <Pressable
+            style={styles.addButton}
+            onPress={() => router.push("/add-task")}
+          >
+            <LinearGradient
+              colors={[Colors.cyberLime, "#B8E600"]}
+              style={styles.addButtonGradient}
+            >
+              <Ionicons name="add" size={22} color={Colors.background} />
+            </LinearGradient>
+          </Pressable>
         </View>
-        <Pressable
-          style={styles.avatar}
-          onPress={() => router.push("/(tabs)/profile")}
+      </LinearGradient>
+
+      {/* Filter Pills */}
+      <View style={styles.filtersContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersScroll}
         >
-          <Ionicons name="person" size={18} color={COLORS.black} />
-        </Pressable>
+          {FILTER_OPTIONS.map((filter) => (
+            <Pressable
+              key={filter.key}
+              style={[
+                styles.filterPill,
+                activeFilter === filter.key && styles.filterPillActive,
+              ]}
+              onPress={() => {
+                setActiveFilter(filter.key);
+                Haptics.selectionAsync();
+              }}
+            >
+              <Ionicons
+                name={filter.icon}
+                size={14}
+                color={
+                  activeFilter === filter.key
+                    ? Colors.background
+                    : Colors.textSecondary
+                }
+              />
+              <Text
+                style={[
+                  styles.filterText,
+                  activeFilter === filter.key && styles.filterTextActive,
+                ]}
+              >
+                {filter.label}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
       </View>
 
       <ScrollView
@@ -210,172 +243,284 @@ export default function TasksScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={COLORS.black}
+            tintColor={Colors.cyberLime}
           />
         }
       >
         {/* Progress Card */}
-        <Animated.View
-          entering={FadeInDown.delay(100)}
-          style={styles.progressCard}
-        >
-          <View style={styles.progressHeader}>
-            <View>
-              <Text style={styles.progressLabel}>
-                {progressPercent >= 100
-                  ? "All Done! 🎉"
-                  : progressPercent >= 50
-                  ? "Keep it up!"
-                  : "Let's go!"}
-              </Text>
-              <View style={styles.streakRow}>
-                <Ionicons name="flame" size={14} color={COLORS.orange} />
-                <Text style={styles.streakText}>
-                  {currentStreak} DAY STREAK
+        <Animated.View entering={FadeInDown.delay(50)}>
+          <LinearGradient
+            colors={["rgba(205, 255, 0, 0.1)", "rgba(205, 255, 0, 0.02)"]}
+            style={styles.progressCard}
+          >
+            <View style={styles.progressHeader}>
+              <View style={styles.progressInfo}>
+                <Text style={styles.progressLabel}>Daily Progress</Text>
+                <Text style={styles.progressValue}>
+                  {completedCount}/{filteredTasks.length} completed
                 </Text>
               </View>
+              <View style={styles.streakBadge}>
+                <Ionicons name="flame" size={14} color={Colors.warning} />
+                <Text style={styles.streakText}>{currentStreak}</Text>
+              </View>
             </View>
-            <Text style={styles.progressPercent}>{progressPercent}%</Text>
-          </View>
-          <View style={styles.progressBarBg}>
-            <View
-              style={[
-                styles.progressBarFill,
-                { width: `${Math.min(progressPercent, 100)}%` },
-              ]}
-            />
-          </View>
+            <View style={styles.progressBarBg}>
+              <LinearGradient
+                colors={[Colors.cyberLime, "#B8E600"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[
+                  styles.progressBarFill,
+                  { width: `${Math.max(filteredProgress, 2)}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.progressPercent}>{filteredProgress}%</Text>
+          </LinearGradient>
         </Animated.View>
 
         {/* Task Sections */}
-        {tasks.length === 0 ? (
+        {filteredTasks.length === 0 ? (
           <Animated.View
-            entering={FadeInDown.delay(200)}
+            entering={FadeInDown.delay(100)}
             style={styles.emptyState}
           >
-            <View style={styles.emptyIcon}>
-              <Ionicons name="add-circle" size={44} color={COLORS.black} />
-            </View>
-            <Text style={styles.emptyTitle}>No habits yet!</Text>
-            <Text style={styles.emptySubtitle}>
-              Tap the + button to create your first habit
-            </Text>
-            <Pressable
-              style={styles.addFirstButton}
-              onPress={() => router.push("/add-task")}
+            <LinearGradient
+              colors={[`${Colors.cyberLime}15`, "transparent"]}
+              style={styles.emptyStateGradient}
             >
-              <Ionicons name="add" size={20} color={COLORS.black} />
-              <Text style={styles.addFirstText}>ADD HABIT</Text>
-            </Pressable>
+              <View style={styles.emptyIcon}>
+                <Ionicons
+                  name="checkbox-outline"
+                  size={48}
+                  color={Colors.cyberLime}
+                />
+              </View>
+              <Text style={styles.emptyTitle}>No habits yet!</Text>
+              <Text style={styles.emptySubtitle}>
+                Create your first habit to start building better routines
+              </Text>
+              <Pressable
+                style={styles.addFirstButton}
+                onPress={() => router.push("/add-task")}
+              >
+                <LinearGradient
+                  colors={[Colors.cyberLime, "#B8E600"]}
+                  style={styles.addFirstButtonGradient}
+                >
+                  <Ionicons name="add" size={18} color={Colors.background} />
+                  <Text style={styles.addFirstText}>Create Habit</Text>
+                </LinearGradient>
+              </Pressable>
+            </LinearGradient>
           </Animated.View>
         ) : (
           TIME_SECTIONS.map((section, sectionIndex) => {
-            const sectionTasks = groupedTasks[section.key] || [];
+            const sectionTasks = groupedTasks[section.key];
             if (sectionTasks.length === 0) return null;
 
             return (
               <Animated.View
                 key={section.key}
-                entering={FadeInDown.delay(200 + sectionIndex * 100)}
+                entering={FadeInDown.delay(100 + sectionIndex * 50)}
                 style={styles.section}
               >
                 <View style={styles.sectionHeader}>
-                  <Ionicons
-                    name={section.icon}
-                    size={16}
-                    color={section.color}
-                  />
+                  <View style={styles.sectionIconContainer}>
+                    <Ionicons
+                      name={section.icon}
+                      size={16}
+                      color={Colors.cyberLime}
+                    />
+                  </View>
                   <Text style={styles.sectionTitle}>{section.label}</Text>
+                  <Text style={styles.sectionCount}>
+                    {sectionTasks.filter((t) => isTaskCompleted(t.id)).length}/
+                    {sectionTasks.length}
+                  </Text>
                 </View>
 
-                {sectionTasks.map((task) => {
-                  const isCompleted = completedTaskIds.has(task.id);
-                  const taskStreak = getTaskStreak(task.id);
+                <View style={styles.tasksList}>
+                  {sectionTasks.map((task, index) => {
+                    const completed = isTaskCompleted(task.id);
+                    const categoryColor = getCategoryColor(task.category);
+                    const isExpanded = expandedTaskId === task.id;
 
-                  return (
-                    <Pressable
-                      key={task.id}
-                      style={[
-                        styles.taskCard,
-                        isCompleted && styles.taskCardCompleted,
-                      ]}
-                      onPress={() => handleToggleTask(task)}
-                    >
-                      <View style={styles.taskLeft}>
-                        <View
+                    return (
+                      <View key={task.id}>
+                        <Pressable
                           style={[
-                            styles.checkbox,
-                            isCompleted && styles.checkboxDone,
+                            styles.taskCard,
+                            completed && styles.taskCardCompleted,
                           ]}
+                          onPress={() => handleToggleTask(task)}
+                          onLongPress={() => handleTaskOptions(task)}
                         >
-                          {isCompleted && (
-                            <Ionicons
-                              name="checkmark"
-                              size={16}
-                              color={COLORS.black}
-                            />
-                          )}
-                        </View>
-                        <View style={styles.taskInfo}>
-                          <Text
+                          <View
                             style={[
-                              styles.taskName,
-                              isCompleted && styles.taskNameDone,
+                              styles.checkbox,
+                              completed && styles.checkboxCompleted,
                             ]}
                           >
-                            {task.name}
-                          </Text>
-                          {taskStreak > 0 ? (
-                            <View style={styles.streakBadge}>
+                            {completed && (
                               <Ionicons
-                                name="flame"
-                                size={10}
-                                color={COLORS.orange}
+                                name="checkmark"
+                                size={14}
+                                color={Colors.background}
                               />
-                              <Text style={styles.streakBadgeText}>
-                                {taskStreak} STREAK
+                            )}
+                          </View>
+                          <View style={styles.taskContent}>
+                            <View style={styles.taskNameRow}>
+                              <Text
+                                style={[
+                                  styles.taskName,
+                                  completed && styles.taskNameCompleted,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {task.name}
                               </Text>
+                              {task.priority && task.priority !== "low" && (
+                                <View
+                                  style={[
+                                    styles.priorityTag,
+                                    {
+                                      backgroundColor:
+                                        task.priority === "high"
+                                          ? `${Colors.error}20`
+                                          : `${Colors.warning}20`,
+                                    },
+                                  ]}
+                                >
+                                  <Ionicons
+                                    name="flag"
+                                    size={10}
+                                    color={
+                                      task.priority === "high"
+                                        ? Colors.error
+                                        : Colors.warning
+                                    }
+                                  />
+                                  <Text
+                                    style={[
+                                      styles.priorityTagText,
+                                      {
+                                        color:
+                                          task.priority === "high"
+                                            ? Colors.error
+                                            : Colors.warning,
+                                      },
+                                    ]}
+                                  >
+                                    {task.priority.toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
                             </View>
-                          ) : (
-                            <Text style={styles.categoryText}>
-                              {task.category.charAt(0).toUpperCase() +
-                                task.category.slice(1)}
-                            </Text>
-                          )}
-                        </View>
+                            <View style={styles.taskMeta}>
+                              <View
+                                style={[
+                                  styles.categoryDot,
+                                  { backgroundColor: categoryColor },
+                                ]}
+                              />
+                              <Text style={styles.taskCategory}>
+                                {task.category}
+                              </Text>
+                              {task.frequency !== "daily" && (
+                                <View style={styles.frequencyBadge}>
+                                  <Text style={styles.frequencyText}>
+                                    {task.frequency}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                          <Pressable
+                            style={styles.moreButton}
+                            onPress={() => handleTaskOptions(task)}
+                          >
+                            <Ionicons
+                              name="ellipsis-vertical"
+                              size={18}
+                              color={Colors.textMuted}
+                            />
+                          </Pressable>
+                        </Pressable>
+
+                        {/* Expanded Options */}
+                        {isExpanded && (
+                          <Animated.View
+                            entering={FadeInRight.duration(200)}
+                            style={styles.taskActions}
+                          >
+                            <Pressable
+                              style={styles.actionButton}
+                              onPress={() => {
+                                setExpandedTaskId(null);
+                                router.push({
+                                  pathname: "/add-task",
+                                  params: { id: task.id },
+                                });
+                              }}
+                            >
+                              <Ionicons
+                                name="pencil-outline"
+                                size={18}
+                                color={Colors.info}
+                              />
+                              <Text
+                                style={[
+                                  styles.actionText,
+                                  { color: Colors.info },
+                                ]}
+                              >
+                                Edit
+                              </Text>
+                            </Pressable>
+                            <View style={styles.actionDivider} />
+                            <Pressable
+                              style={styles.actionButton}
+                              onPress={() => handleDeleteTask(task)}
+                            >
+                              <Ionicons
+                                name="trash-outline"
+                                size={18}
+                                color={Colors.error}
+                              />
+                              <Text
+                                style={[
+                                  styles.actionText,
+                                  { color: Colors.error },
+                                ]}
+                              >
+                                Delete
+                              </Text>
+                            </Pressable>
+                          </Animated.View>
+                        )}
                       </View>
-                      <Ionicons
-                        name={
-                          task.category === "fitness"
-                            ? "barbell"
-                            : task.category === "health"
-                            ? "water"
-                            : task.category === "mindfulness"
-                            ? "leaf"
-                            : task.category === "learning"
-                            ? "book"
-                            : "document-text"
-                        }
-                        size={22}
-                        color={isCompleted ? COLORS.pastelGreen : COLORS.muted}
-                      />
-                    </Pressable>
-                  );
-                })}
+                    );
+                  })}
+                </View>
               </Animated.View>
             );
           })
         )}
 
-        {/* Add Task Button */}
-        {tasks.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(500)}>
+        {/* Add More Button */}
+        {filteredTasks.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(400)}>
             <Pressable
-              style={styles.addTaskButton}
+              style={styles.addMoreCard}
               onPress={() => router.push("/add-task")}
             >
-              <Ionicons name="add" size={22} color={COLORS.white} />
-              <Text style={styles.addTaskText}>ADD TASK</Text>
+              <View style={styles.addMoreIcon}>
+                <Ionicons name="add" size={20} color={Colors.background} />
+              </View>
+              <Text style={styles.addMoreText}>Add New Habit</Text>
             </Pressable>
           </Animated.View>
         )}
@@ -387,250 +532,359 @@ export default function TasksScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: Colors.background,
+  },
+  headerGradient: {
+    paddingBottom: Spacing.sm,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   headerLeft: {
     flex: 1,
   },
-  dateLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: COLORS.muted,
-    letterSpacing: 0.5,
+  headerSubtitle: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes["2xl"],
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+    marginTop: 2,
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.pastelPink,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+  addButton: {
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+  },
+  addButtonGradient: {
+    width: 44,
+    height: 44,
     justifyContent: "center",
     alignItems: "center",
+  },
+  filtersContainer: {
+    marginBottom: Spacing.md,
+  },
+  filtersScroll: {
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  filterPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  filterPillActive: {
+    backgroundColor: Colors.cyberLime,
+    borderColor: Colors.cyberLime,
+  },
+  filterText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
+  },
+  filterTextActive: {
+    color: Colors.background,
   },
   scrollView: {
     flex: 1,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: Spacing.lg,
   },
   progressCard: {
-    backgroundColor: COLORS.pastelGreen,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 18,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.cyberLime,
   },
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  progressInfo: {
+    flex: 1,
   },
   progressLabel: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: COLORS.black,
-    marginBottom: 4,
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
   },
-  streakRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  streakText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: COLORS.black,
-    letterSpacing: 0.5,
-  },
-  progressPercent: {
-    fontSize: 26,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  progressBarBg: {
-    height: 20,
-    backgroundColor: COLORS.white,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    overflow: "hidden",
-  },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: COLORS.darkCard,
-    borderRadius: 8,
-  },
-  section: {
-    marginBottom: 18,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: COLORS.black,
-    letterSpacing: 0.5,
-  },
-  taskCard: {
-    backgroundColor: COLORS.pastelGreen,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  taskCardCompleted: {
-    backgroundColor: "rgba(193,255,114,0.5)",
-  },
-  taskLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    flex: 1,
-  },
-  taskInfo: {
-    flex: 1,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    backgroundColor: COLORS.white,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  checkboxDone: {
-    backgroundColor: COLORS.pastelGreen,
-  },
-  taskName: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: COLORS.black,
-  },
-  taskNameDone: {
-    textDecorationLine: "line-through",
-    opacity: 0.6,
+  progressValue: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   streakBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    marginTop: 2,
+    gap: Spacing.xs,
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
   },
-  streakBadgeText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: COLORS.orange,
-    letterSpacing: 0.5,
+  streakText: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
   },
-  categoryText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: COLORS.muted,
-    marginTop: 2,
+  progressBarBg: {
+    height: 10,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+    marginBottom: Spacing.sm,
+  },
+  progressBarFill: {
+    height: "100%",
+    borderRadius: BorderRadius.full,
+  },
+  progressPercent: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.cyberLime,
+    textAlign: "right",
   },
   emptyState: {
+    borderRadius: BorderRadius.xl,
+    overflow: "hidden",
+  },
+  emptyStateGradient: {
     alignItems: "center",
-    paddingVertical: 40,
+    paddingVertical: Spacing["4xl"],
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 18,
-    backgroundColor: COLORS.white,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 14,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    marginBottom: Spacing.lg,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: COLORS.black,
-    marginBottom: 6,
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.sm,
   },
   emptySubtitle: {
-    fontSize: 13,
-    color: COLORS.muted,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
     textAlign: "center",
-    marginBottom: 18,
+    marginBottom: Spacing["2xl"],
+    paddingHorizontal: Spacing.xl,
   },
   addFirstButton: {
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+  },
+  addFirstButtonGradient: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: COLORS.pastelGreen,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    gap: 6,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    paddingHorizontal: Spacing["2xl"],
+    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
   },
   addFirstText: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.background,
   },
-  addTaskButton: {
-    backgroundColor: COLORS.black,
-    borderRadius: 14,
-    padding: 14,
+  section: {
+    marginBottom: Spacing.xl,
+  },
+  sectionHeader: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  sectionIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.cyberLimeLight,
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
   },
-  addTaskText: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: COLORS.white,
-    letterSpacing: 0.5,
+  sectionTitle: {
+    flex: 1,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+  },
+  sectionCount: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textSecondary,
+  },
+  tasksList: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  taskCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDefault,
+    gap: Spacing.md,
+  },
+  taskCardCompleted: {
+    opacity: 0.7,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 2,
+    borderColor: Colors.borderDefault,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  checkboxCompleted: {
+    backgroundColor: Colors.cyberLime,
+    borderColor: Colors.cyberLime,
+  },
+  taskContent: {
+    flex: 1,
+  },
+  taskNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 2,
+    gap: Spacing.sm,
+  },
+  taskName: {
+    flex: 1,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodyMedium,
+    color: Colors.textPrimary,
+  },
+  taskNameCompleted: {
+    textDecorationLine: "line-through",
+    color: Colors.textSecondary,
+  },
+  priorityTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  priorityTagText: {
+    fontSize: 9,
+    fontFamily: Typography.fonts.bodyBold,
+  },
+  taskMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  categoryDot: {
+    width: 6,
+    height: 6,
+    borderRadius: BorderRadius.full,
+  },
+  taskCategory: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    textTransform: "capitalize",
+  },
+  frequencyBadge: {
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  frequencyText: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
+    textTransform: "capitalize",
+  },
+  moreButton: {
+    padding: Spacing.xs,
+  },
+  taskActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    backgroundColor: Colors.surfaceElevated,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDefault,
+  },
+  actionDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: Colors.borderDefault,
+    alignSelf: "center",
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+  },
+  actionDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: Colors.borderDefault,
+    marginHorizontal: Spacing.xs,
+  },
+  actionText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+  },
+  addMoreCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    borderStyle: "dashed",
+  },
+  addMoreIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.cyberLime,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addMoreText: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
   },
 });

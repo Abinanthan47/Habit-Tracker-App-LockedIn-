@@ -1,7 +1,14 @@
 // Task/Habit Types
-export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'anytime';
-export type TaskCategory = 'health' | 'work' | 'personal' | 'learning' | 'fitness' | 'mindfulness';
-export type TaskFrequency = 'daily' | 'weekly' | 'custom';
+export type TimeOfDay = "morning" | "afternoon" | "evening" | "anytime";
+export type TaskCategory =
+  | "health"
+  | "work"
+  | "personal"
+  | "learning"
+  | "fitness"
+  | "mindfulness";
+export type TaskFrequency = "daily" | "weekly" | "monthly" | "custom";
+export type TaskPriority = "low" | "medium" | "high";
 
 export interface Task {
   id: string;
@@ -9,6 +16,7 @@ export interface Task {
   category: TaskCategory;
   timeOfDay: TimeOfDay;
   frequency: TaskFrequency;
+  priority?: TaskPriority;
   customDays?: number[]; // 0-6 for Sunday-Saturday
   timesPerWeek?: number;
   createdAt: string;
@@ -36,12 +44,33 @@ export interface Milestone {
   isCompleted: boolean;
 }
 
+// Goal Item - for tracking individual items (books, podcasts, etc.)
+export interface GoalItem {
+  id: string;
+  goalId: string;
+  title: string;
+  description?: string;
+  completedAt?: string;
+  rating?: number; // 1-5 stars
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ProgressUpdate {
+  id: string;
+  goalId: string;
+  value: number;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface Goal {
   id: string;
   title: string;
   description: string;
   year: number;
-  targetType: 'numeric' | 'checkbox';
+  icon?: string; // Emoji
+  targetType: "numeric" | "items";
   targetValue: number;
   currentValue: number;
   unit?: string;
@@ -49,10 +78,13 @@ export interface Goal {
   linkedTaskIds: string[];
   createdAt: string;
   isArchived: boolean;
+  trackItems?: boolean;
+  items?: GoalItem[];
+  progressUpdates?: ProgressUpdate[];
 }
 
 // Badge Types
-export type BadgeRarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type BadgeRarity = "common" | "rare" | "epic" | "legendary";
 
 export interface Badge {
   id: string;
@@ -68,11 +100,13 @@ export interface Badge {
 export interface UserProfile {
   id: string;
   displayName: string;
+  email?: string;
   avatar?: string;
   level: number;
   points: number;
   pointsToNextLevel: number;
   createdAt: string;
+  timezone?: string;
 }
 
 // Streak Types
@@ -111,6 +145,8 @@ export interface AppData {
   tasks: Task[];
   completions: TaskCompletion[];
   goals: Goal[];
+  goalItems: GoalItem[];
+  progressUpdates: ProgressUpdate[];
   badges: Badge[];
   cheatDayConfig: CheatDayConfig;
   activities: DayActivity[];

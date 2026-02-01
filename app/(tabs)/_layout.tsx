@@ -1,65 +1,48 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { router, Tabs } from "expo-router";
+import { Tabs } from "expo-router";
 import React from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HapticTab } from "@/components/haptic-tab";
-
-// Neo-Brutalism Vibrant Colors
-const COLORS = {
-  primary: "#FF7F50",
-  pastelGreen: "#C1FF72",
-  pastelPink: "#FFB1D8",
-  pastelPurple: "#C5B4E3",
-  pastelYellow: "#FDFD96",
-  white: "#FFFFFF",
-  black: "#000000",
-  muted: "rgba(255,255,255,0.5)",
-};
+import { BorderRadius, Colors, Layout, Spacing } from "@/constants/design";
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
 
-  // Fixed tab bar dimensions
-  const TAB_BAR_HEIGHT = 64;
-  const BOTTOM_MARGIN =
-    Platform.OS === "ios" ? Math.max(insets.bottom - 10, 12) : 12;
-  const HORIZONTAL_MARGIN = 20;
+  const TAB_BAR_HEIGHT = Layout.tabBarHeight;
+  const BOTTOM_PADDING = Platform.OS === "ios" ? Math.max(insets.bottom, 8) : 8;
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.primary }}>
+    <View style={{ flex: 1, backgroundColor: Colors.background }}>
       <Tabs
         screenOptions={{
-          tabBarActiveTintColor: COLORS.black,
-          tabBarInactiveTintColor: COLORS.muted,
+          tabBarActiveTintColor: Colors.cyberLime,
+          tabBarInactiveTintColor: Colors.textMuted,
           headerShown: false,
           tabBarButton: HapticTab,
           tabBarStyle: {
             position: "absolute",
-            bottom: BOTTOM_MARGIN,
-            left: HORIZONTAL_MARGIN,
-            right: HORIZONTAL_MARGIN,
-            backgroundColor: COLORS.black,
-            borderRadius: TAB_BAR_HEIGHT / 2,
-            height: TAB_BAR_HEIGHT,
-            paddingBottom: 0,
-            paddingTop: 0,
-            paddingHorizontal: 8,
-            borderWidth: 0,
-            shadowColor: COLORS.black,
-            shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.3,
-            shadowRadius: 12,
-            elevation: 15,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: Colors.surface,
+            height: TAB_BAR_HEIGHT + BOTTOM_PADDING,
+            paddingBottom: BOTTOM_PADDING,
+            paddingTop: Spacing.sm,
+            paddingHorizontal: Spacing.md,
+            borderTopWidth: 1,
+            borderTopLeftRadius: 50,
+            borderTopRightRadius: 50,
+            borderTopColor: Colors.cyberLime,
           },
           tabBarItemStyle: {
-            height: TAB_BAR_HEIGHT,
+            height: TAB_BAR_HEIGHT - Spacing.sm,
             paddingVertical: 0,
             justifyContent: "center",
             alignItems: "center",
           },
-          tabBarShowLabel: false,
+          tabBarShowLabel:false,
         }}
       >
         <Tabs.Screen
@@ -76,7 +59,7 @@ export default function TabLayout() {
                 <Ionicons
                   name={focused ? "home" : "home-outline"}
                   size={22}
-                  color={focused ? COLORS.black : color}
+                  color={focused ? Colors.background : color}
                 />
               </View>
             ),
@@ -85,7 +68,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="tasks"
           options={{
-            title: "Tasks",
+            title: "Habits",
             tabBarIcon: ({ color, focused }) => (
               <View
                 style={[
@@ -94,9 +77,9 @@ export default function TabLayout() {
                 ]}
               >
                 <Ionicons
-                  name={focused ? "list" : "list-outline"}
+                  name={focused ? "checkbox" : "checkbox-outline"}
                   size={22}
-                  color={focused ? COLORS.black : color}
+                  color={focused ? Colors.background : color}
                 />
               </View>
             ),
@@ -116,7 +99,7 @@ export default function TabLayout() {
                 <Ionicons
                   name={focused ? "trophy" : "trophy-outline"}
                   size={22}
-                  color={focused ? COLORS.black : color}
+                  color={focused ? Colors.background : color}
                 />
               </View>
             ),
@@ -125,7 +108,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="profile"
           options={{
-            title: "Profile",
+            title: "Stats",
             tabBarIcon: ({ color, focused }) => (
               <View
                 style={[
@@ -134,9 +117,9 @@ export default function TabLayout() {
                 ]}
               >
                 <Ionicons
-                  name={focused ? "person" : "person-outline"}
+                  name={focused ? "stats-chart" : "stats-chart-outline"}
                   size={22}
-                  color={focused ? COLORS.black : color}
+                  color={focused ? Colors.background : color}
                 />
               </View>
             ),
@@ -149,45 +132,19 @@ export default function TabLayout() {
           }}
         />
       </Tabs>
-
-      {/* Floating Add Button */}
-      <Pressable
-        style={[styles.fab, { bottom: TAB_BAR_HEIGHT + BOTTOM_MARGIN + 12 }]}
-        onPress={() => router.push("/add-task")}
-      >
-        <Ionicons name="add" size={28} color={COLORS.black} />
-      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   tabIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.lg,
     justifyContent: "center",
     alignItems: "center",
   },
   tabIconActive: {
-    backgroundColor: COLORS.white,
-  },
-  fab: {
-    position: "absolute",
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.white,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 8,
-    zIndex: 100,
+    backgroundColor: Colors.cyberLime,
   },
 });

@@ -5,53 +5,69 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Neo-Brutalism Vibrant Theme
-        primary: "#FF7F50", // Coral Orange
-        "vibrant-orange": "#FF7F50",
+        // Cyber Lime Dark Theme
+        "cyber-lime": "#CDFF00",
+        "cyber-lime-light": "rgba(205, 255, 0, 0.15)",
+        "cyber-lime-muted": "rgba(205, 255, 0, 0.6)",
 
-        // Pastel Colors
-        pastel: {
-          green: "#C1FF72",
-          purple: "#C5B4E3",
-          pink: "#FFB1D8",
-          blue: "#A0D7FF",
-          yellow: "#FDFD96",
-          cream: "#FFF6E3",
+        // Background Hierarchy
+        background: "#0A0A0A",
+        surface: "#121212",
+        "surface-elevated": "#1A1A1A",
+        "surface-hover": "#252525",
+
+        // Text Colors
+        "text-primary": "#FFFFFF",
+        "text-secondary": "#A0A0A0",
+        "text-muted": "#606060",
+
+        // Border Colors
+        "border-default": "#2A2A2A",
+        "border-active": "#CDFF00",
+        "border-muted": "#1F1F1F",
+
+        // Status Colors
+        success: "#00FF88",
+        warning: "#FFB800",
+        error: "#FF4444",
+        info: "#00B4FF",
+
+        // Heatmap Colors
+        heatmap: {
+          empty: "#1A1A1A",
+          level1: "rgba(205, 255, 0, 0.2)",
+          level2: "rgba(205, 255, 0, 0.4)",
+          level3: "rgba(205, 255, 0, 0.7)",
+          level4: "#CDFF00",
         },
 
-        // Card backgrounds
-        card: {
-          white: "#FFFFFF",
-          dark: "#1a1a2e",
-        },
-
-        // Text
-        border: "#000000",
-
-        // Stats colors
-        neo: {
-          blue: "#4fb3ff",
-          yellow: "#ffd33d",
-          pink: "#ff79c6",
-          green: "#C1FF72",
+        // Category Colors
+        category: {
+          health: "#00FF88",
+          fitness: "#FF6B6B",
+          mindfulness: "#A78BFA",
+          learning: "#3B82F6",
+          work: "#F59E0B",
+          personal: "#EC4899",
         },
       },
       fontFamily: {
-        display: ["Plus Jakarta Sans", "Inter", "System", "sans-serif"],
+        display: ["Inter", "System", "sans-serif"],
       },
       borderRadius: {
         sm: "4px",
         DEFAULT: "8px",
-        lg: "12px",
-        xl: "16px",
+        md: "12px",
+        lg: "16px",
+        xl: "20px",
         "2xl": "24px",
         "3xl": "32px",
       },
       boxShadow: {
-        brutal: "4px 4px 0px 0px #000000",
-        "brutal-sm": "2px 2px 0px 0px #000000",
-        "brutal-lg": "6px 6px 0px 0px #000000",
-        "brutal-xl": "8px 8px 0px 0px #000000",
+        sm: "0 2px 4px rgba(0, 0, 0, 0.25)",
+        md: "0 4px 8px rgba(0, 0, 0, 0.3)",
+        lg: "0 8px 16px rgba(0, 0, 0, 0.4)",
+        glow: "0 0 12px rgba(205, 255, 0, 0.5)",
       },
     },
   },

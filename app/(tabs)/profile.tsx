@@ -1,33 +1,37 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
+  Dimensions,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
+import { BarChart, PieChart } from "react-native-gifted-charts";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { BadgeCard } from "@/components/BadgeCard";
+import {
+  BorderRadius,
+  Colors,
+  Layout,
+  Spacing,
+  Typography,
+  getCategoryColor,
+} from "@/constants/design";
 import { useApp } from "@/context/AppContext";
 
-// Neo-Brutalism Vibrant Colors
-const COLORS = {
-  bg: "#FFF0F5",
-  pastelGreen: "#C1FF72",
-  pastelPurple: "#C5B4E3",
-  pastelPink: "#FFB1D8",
-  pastelBlue: "#A0D7FF",
-  pastelYellow: "#FDFD96",
-  white: "#FFFFFF",
-  black: "#000000",
-  muted: "rgba(0,0,0,0.5)",
-};
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const CHART_WIDTH = SCREEN_WIDTH - Spacing.lg * 4 - 40;
 
 export default function ProfileScreen() {
   const {
@@ -42,15 +46,26 @@ export default function ProfileScreen() {
     tasks,
     goals,
     activities,
+    updateProfile,
   } = useApp();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState(profile?.displayName || "");
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshData();
     setRefreshing(false);
   }, [refreshData]);
+
+  const handleSaveProfile = async () => {
+    if (editName.trim()) {
+      await updateProfile({ displayName: editName.trim() });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    setShowEditModal(false);
+  };
 
   const handleUseCheatDay = useCallback(async () => {
     const remaining = cheatDayConfig
@@ -74,11 +89,11 @@ export default function ProfileScreen() {
             }
           },
         },
-      ]
+      ],
     );
   }, [cheatDayConfig, useCheatDay]);
 
-  // Calculate real stats from data
+  // Calculate real stats
   const successRate = useMemo(() => {
     if (activities.length === 0) return 0;
     const avgCompletion =
@@ -94,48 +109,108 @@ export default function ProfileScreen() {
   const yearlyGoalProgress = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const yearGoals = goals.filter(
-      (g) => g.year === currentYear && !g.isArchived
+      (g) => g.year === currentYear && !g.isArchived,
     );
     if (yearGoals.length === 0) return 0;
     return Math.round(
       yearGoals.reduce(
         (sum, g) => sum + Math.min((g.currentValue / g.targetValue) * 100, 100),
-        0
-      ) / yearGoals.length
+        0,
+      ) / yearGoals.length,
     );
   }, [goals]);
 
   const totalCompletions = completions.length;
 
-  // Calculate XP progress
+  // XP progress
   const xpProgress = profile
     ? Math.round((profile.points / profile.pointsToNextLevel) * 100)
     : 0;
   const xpToNext = profile ? profile.pointsToNextLevel - profile.points : 100;
 
-  // Get unlocked badges
+  // Weekly activity data for bar chart
+  const weeklyData = useMemo(() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - dayOfWeek);
+
+    const data = [];
+
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + i);
+      const dateStr = date.toISOString().split("T")[0];
+      const activity = activities.find((a) => a.date === dateStr);
+      const value = activity ? activity.completionRate : 0;
+      const isToday = dateStr === today.toISOString().split("T")[0];
+
+      data.push({
+        value: value,
+        label: days[i],
+        frontColor: isToday
+          ? Colors.cyberLime
+          : value >= 80
+            ? "#B8E600"
+            : value >= 50
+              ? Colors.warning
+              : Colors.surfaceElevated,
+        labelTextStyle: {
+          color: isToday ? Colors.cyberLime : Colors.textSecondary,
+          fontSize: 10,
+          fontFamily: Typography.fonts.body,
+        },
+      });
+    }
+    return data;
+  }, [activities]);
+
+  // Category distribution for pie chart
+  const categoryData = useMemo(() => {
+    const categories: Record<string, number> = {};
+    tasks.forEach((task) => {
+      categories[task.category] = (categories[task.category] || 0) + 1;
+    });
+
+    return Object.entries(categories).map(([name, value]) => ({
+      value,
+      color: getCategoryColor(name as any),
+      text: name,
+      label: name.charAt(0).toUpperCase() + name.slice(1),
+    }));
+  }, [tasks]);
+
+  // Unlocked badges
   const unlockedBadges = useMemo(
     () => badges.filter((b) => b.unlockedAt),
-    [badges]
+    [badges],
   );
 
-  // Tab bar dimensions
-  const TAB_BAR_HEIGHT = 64;
-  const BOTTOM_MARGIN = Platform.OS === "ios" ? 24 : 12;
-  const bottomPadding = TAB_BAR_HEIGHT + BOTTOM_MARGIN + 80;
+  const TAB_BAR_HEIGHT = Layout.tabBarHeight;
+  const bottomPadding = TAB_BAR_HEIGHT + (Platform.OS === "ios" ? 24 : 16) + 20;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable style={styles.settingsBtn}>
-          <Ionicons name="settings-outline" size={20} color={COLORS.black} />
-        </Pressable>
-        <Text style={styles.headerTitle}>My Stats</Text>
-        <Pressable style={styles.shareBtn}>
-          <Ionicons name="share-outline" size={20} color={COLORS.black} />
-        </Pressable>
-      </View>
+      <LinearGradient
+        colors={[Colors.surface, Colors.background]}
+        style={styles.headerGradient}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <Pressable
+            style={styles.settingsButton}
+            onPress={() => setShowEditModal(true)}
+          >
+            <Ionicons
+              name="create-outline"
+              size={20}
+              color={Colors.textSecondary}
+            />
+          </Pressable>
+        </View>
+      </LinearGradient>
 
       <ScrollView
         style={styles.scrollView}
@@ -148,137 +223,251 @@ export default function ProfileScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={COLORS.black}
+            tintColor={Colors.cyberLime}
           />
         }
       >
-        {/* Profile Card */}
-        <Animated.View
-          entering={FadeInDown.delay(100)}
-          style={styles.profileCard}
-        >
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Ionicons name="person" size={40} color={COLORS.black} />
+        {/* Profile Card with Gradient */}
+        <Animated.View entering={FadeInDown.delay(50)}>
+          <LinearGradient
+            colors={["rgba(205, 255, 0, 0.1)", "rgba(205, 255, 0, 0.02)"]}
+            style={styles.profileCard}
+          >
+            <View style={styles.profileHeader}>
+              <View style={styles.avatarContainer}>
+                <LinearGradient
+                  colors={[Colors.cyberLime, "#B8E600"]}
+                  style={styles.avatar}
+                >
+                  <Text style={styles.avatarText}>
+                    {(profile?.displayName || "A").charAt(0).toUpperCase()}
+                  </Text>
+                </LinearGradient>
+                <LinearGradient
+                  colors={[Colors.warning, "#FF8C00"]}
+                  style={styles.levelBadge}
+                >
+                  <Text style={styles.levelText}>{profile?.level || 1}</Text>
+                </LinearGradient>
+              </View>
+              <View style={styles.profileInfo}>
+                <Text style={styles.userName}>
+                  {profile?.displayName || "Achiever"}
+                </Text>
+                <Text style={styles.userMotto}>
+                  Level {profile?.level || 1} • {totalCompletions} completions
+                </Text>
+              </View>
             </View>
-            <View style={styles.levelBadge}>
-              <Text style={styles.levelText}>LVL {profile?.level || 1}</Text>
-            </View>
-          </View>
 
-          <View style={styles.profileInfo}>
-            <Text style={styles.userName}>
-              {profile?.displayName || "Achiever"}
-            </Text>
-            <Text style={styles.motto}>"Consistency is the King!" 🎯</Text>
-          </View>
-
-          {/* XP Progress */}
-          <View style={styles.xpSection}>
-            <View style={styles.xpHeader}>
-              <Text style={styles.xpLabel}>LEVEL PROGRESS</Text>
-              <Text style={styles.xpValue}>
-                {profile?.points || 0}/{profile?.pointsToNextLevel || 100} XP
+            {/* XP Progress */}
+            <View style={styles.xpSection}>
+              <View style={styles.xpHeader}>
+                <View style={styles.xpLabelRow}>
+                  <Ionicons name="star" size={14} color={Colors.warning} />
+                  <Text style={styles.xpLabel}>Experience</Text>
+                </View>
+                <Text style={styles.xpValue}>
+                  {profile?.points || 0} / {profile?.pointsToNextLevel || 100}{" "}
+                  XP
+                </Text>
+              </View>
+              <View style={styles.xpBarBg}>
+                <LinearGradient
+                  colors={[Colors.warning, "#FF8C00"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[
+                    styles.xpBarFill,
+                    { width: `${Math.max(xpProgress, 5)}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.xpHint}>
+                {xpToNext} XP to level {(profile?.level || 1) + 1}
               </Text>
             </View>
-            <View style={styles.xpBarBg}>
-              <View style={[styles.xpBarFill, { width: `${xpProgress}%` }]} />
-            </View>
-            <Text style={styles.xpHint}>🔥 {xpToNext} XP to level up!</Text>
-          </View>
+          </LinearGradient>
         </Animated.View>
 
-        {/* Stats Grid */}
+        {/* Quick Stats Grid */}
         <Animated.View
-          entering={FadeInDown.delay(200)}
+          entering={FadeInDown.delay(100)}
           style={styles.statsGrid}
         >
-          {/* Current Streak */}
-          <View
-            style={[styles.statCard, { backgroundColor: COLORS.pastelGreen }]}
+          <LinearGradient
+            colors={[`${Colors.warning}20`, `${Colors.warning}05`]}
+            style={[styles.statCard, styles.statCardLarge]}
           >
-            <View style={styles.statIcon}>
-              <Ionicons name="flash" size={18} color={COLORS.black} />
+            <View
+              style={[
+                styles.statIconContainer,
+                { backgroundColor: `${Colors.warning}30` },
+              ]}
+            >
+              <Ionicons name="flame" size={24} color={Colors.warning} />
             </View>
             <Text style={styles.statValue}>{currentStreak}</Text>
-            <Text style={styles.statLabel}>CURRENT STREAK</Text>
-          </View>
-
-          {/* Success Rate */}
-          <View
-            style={[styles.statCard, { backgroundColor: COLORS.pastelYellow }]}
+            <Text style={styles.statLabel}>Day Streak</Text>
+          </LinearGradient>
+          <LinearGradient
+            colors={[`${Colors.cyberLime}20`, `${Colors.cyberLime}05`]}
+            style={[styles.statCard, styles.statCardLarge]}
           >
-            <View style={styles.statIcon}>
-              <Ionicons name="trending-up" size={18} color={COLORS.black} />
+            <View
+              style={[
+                styles.statIconContainer,
+                { backgroundColor: `${Colors.cyberLime}30` },
+              ]}
+            >
+              <Ionicons name="trophy" size={24} color={Colors.cyberLime} />
             </View>
-            <Text style={styles.statValue}>{successRate}%</Text>
-            <Text style={styles.statLabel}>SUCCESS RATE</Text>
-          </View>
+            <Text style={styles.statValue}>{longestStreak}</Text>
+            <Text style={styles.statLabel}>Best Streak</Text>
+          </LinearGradient>
 
-          {/* Cheat Days */}
-          <View
-            style={[styles.statCard, { backgroundColor: COLORS.pastelPink }]}
-          >
-            <View style={styles.statIcon}>
-              <Ionicons name="pizza" size={18} color={COLORS.black} />
+          <View style={styles.statCard}>
+            <View
+              style={[
+                styles.statIconContainer,
+                { backgroundColor: `${Colors.info}20` },
+              ]}
+            >
+              <Ionicons name="trending-up" size={18} color={Colors.info} />
             </View>
-            <Text style={styles.statValue}>
-              {String(cheatDaysLeft).padStart(2, "0")}
-            </Text>
-            <Text style={styles.statLabel}>CHEAT DAYS</Text>
+            <Text style={styles.statValueSmall}>{successRate}%</Text>
+            <Text style={styles.statLabel}>Avg Rate</Text>
           </View>
-
-          {/* Yearly Goals */}
-          <View
-            style={[styles.statCard, { backgroundColor: COLORS.pastelBlue }]}
-          >
-            <View style={styles.statIcon}>
-              <Ionicons name="flag" size={18} color={COLORS.black} />
+          <View style={styles.statCard}>
+            <View
+              style={[
+                styles.statIconContainer,
+                { backgroundColor: `${Colors.cyberLime}20` },
+              ]}
+            >
+              <Ionicons name="flag" size={18} color={Colors.cyberLime} />
             </View>
-            <Text style={styles.statValue}>{yearlyGoalProgress}%</Text>
-            <Text style={styles.statLabel}>YEARLY GOALS</Text>
+            <Text style={styles.statValueSmall}>{yearlyGoalProgress}%</Text>
+            <Text style={styles.statLabel}>Goals</Text>
+          </View>
+          <View style={styles.statCard}>
+            <View
+              style={[
+                styles.statIconContainer,
+                { backgroundColor: `#EC489920` },
+              ]}
+            >
+              <Ionicons name="pizza" size={18} color="#EC4899" />
+            </View>
+            <Text style={styles.statValueSmall}>{cheatDaysLeft}</Text>
+            <Text style={styles.statLabel}>Cheat Days</Text>
           </View>
         </Animated.View>
 
-        {/* Additional Stats */}
+        {/* Weekly Activity Chart */}
         <Animated.View
-          entering={FadeInDown.delay(300)}
-          style={styles.additionalStats}
+          entering={FadeInDown.delay(150)}
+          style={styles.chartCard}
         >
-          <View style={styles.additionalStatRow}>
-            <View style={styles.additionalStatItem}>
-              <Ionicons
-                name="checkmark-circle"
-                size={22}
-                color={COLORS.pastelGreen}
-              />
-              <Text style={styles.additionalStatValue}>{totalCompletions}</Text>
-              <Text style={styles.additionalStatLabel}>COMPLETED</Text>
-            </View>
-            <View style={styles.additionalStatItem}>
-              <Ionicons name="trophy" size={22} color={COLORS.pastelYellow} />
-              <Text style={styles.additionalStatValue}>{longestStreak}</Text>
-              <Text style={styles.additionalStatLabel}>BEST STREAK</Text>
-            </View>
-            <View style={styles.additionalStatItem}>
-              <Ionicons name="list" size={22} color={COLORS.pastelPink} />
-              <Text style={styles.additionalStatValue}>{tasks.length}</Text>
-              <Text style={styles.additionalStatLabel}>HABITS</Text>
-            </View>
+          <Text style={styles.chartTitle}>Weekly Activity</Text>
+          <Text style={styles.chartSubtitle}>
+            Your completion rate this week
+          </Text>
+          <View style={styles.chartContainer}>
+            <BarChart
+              data={weeklyData}
+              width={CHART_WIDTH}
+              height={140}
+              barWidth={24}
+              spacing={16}
+              roundedTop
+              roundedBottom
+              hideRules
+              xAxisThickness={0}
+              yAxisThickness={0}
+              yAxisTextStyle={{
+                color: Colors.textMuted,
+                fontSize: 10,
+                fontFamily: Typography.fonts.number,
+              }}
+              noOfSections={4}
+              maxValue={100}
+              isAnimated
+              animationDuration={500}
+              barBorderRadius={4}
+              yAxisLabelSuffix="%"
+              showValuesAsTopLabel
+              topLabelTextStyle={{
+                color: Colors.textSecondary,
+                fontSize: 9,
+                fontFamily: Typography.fonts.number,
+              }}
+            />
           </View>
         </Animated.View>
+
+        {/* Habits Distribution - Fixed Legend */}
+        {tasks.length > 0 && (
+          <Animated.View
+            entering={FadeInDown.delay(200)}
+            style={styles.chartCard}
+          >
+            <Text style={styles.chartTitle}>Habits by Category</Text>
+            <Text style={styles.chartSubtitle}>
+              Distribution of your {tasks.length} habits
+            </Text>
+            <View style={styles.pieChartContainer}>
+              <PieChart
+                data={categoryData}
+                donut
+                radius={65}
+                innerRadius={40}
+                innerCircleColor={Colors.surface}
+                centerLabelComponent={() => (
+                  <View style={styles.pieCenter}>
+                    <Text style={styles.pieCenterValue}>{tasks.length}</Text>
+                    <Text style={styles.pieCenterLabel}>Total</Text>
+                  </View>
+                )}
+              />
+              <View style={styles.pieLegend}>
+                {categoryData.map((item, index) => (
+                  <View key={index} style={styles.legendItem}>
+                    <View
+                      style={[
+                        styles.legendDot,
+                        { backgroundColor: item.color },
+                      ]}
+                    />
+                    <Text style={styles.legendText}>{item.label}</Text>
+                    <View style={styles.legendValueBadge}>
+                      <Text style={styles.legendValue}>{item.value}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Achievements Section */}
-        <Animated.View entering={FadeInDown.delay(400)}>
+        <Animated.View entering={FadeInDown.delay(250)}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>ACHIEVEMENTS</Text>
-            <Text style={styles.badgeCount}>
-              {unlockedBadges.length}/{badges.length}
-            </Text>
+            <Text style={styles.sectionTitle}>Achievements</Text>
+            <View style={styles.badgeCountBadge}>
+              <Text style={styles.badgeCountText}>
+                {unlockedBadges.length}/{badges.length}
+              </Text>
+            </View>
           </View>
 
           {badges.length === 0 ? (
             <View style={styles.noBadges}>
+              <Ionicons
+                name="ribbon-outline"
+                size={32}
+                color={Colors.textMuted}
+              />
               <Text style={styles.noBadgesText}>
                 Complete tasks to unlock badges!
               </Text>
@@ -289,47 +478,23 @@ export default function ProfileScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.badgesRow}
             >
-              {badges.map((badge, index) => {
-                const isUnlocked = !!badge.unlockedAt;
-                const badgeColors = [
-                  COLORS.pastelYellow,
-                  COLORS.pastelGreen,
-                  COLORS.pastelPink,
-                  COLORS.pastelBlue,
-                ];
-
-                return (
-                  <View
-                    key={badge.id}
-                    style={[
-                      styles.badgeCard,
-                      !isUnlocked && styles.badgeCardLocked,
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.badgeIcon,
-                        {
-                          backgroundColor:
-                            badgeColors[index % badgeColors.length],
-                        },
-                      ]}
-                    >
-                      <Text style={styles.badgeEmoji}>{badge.icon}</Text>
-                    </View>
-                    <Text style={styles.badgeName}>{badge.name}</Text>
-                    <Text style={styles.badgeTier}>
-                      {isUnlocked ? badge.rarity.toUpperCase() : "LOCKED"}
-                    </Text>
-                  </View>
-                );
-              })}
+              {badges.map((badge) => (
+                <BadgeCard
+                  key={badge.id}
+                  badge={badge}
+                  size="small"
+                  showDetails={false}
+                />
+              ))}
             </ScrollView>
           )}
         </Animated.View>
 
-        {/* Use Cheat Day Button */}
-        <Animated.View entering={FadeInDown.delay(500)}>
+        {/* Cheat Day Button */}
+        <Animated.View
+          entering={FadeInDown.delay(300)}
+          style={styles.cheatDaySection}
+        >
           <Pressable
             style={[
               styles.cheatDayButton,
@@ -338,13 +503,82 @@ export default function ProfileScreen() {
             onPress={handleUseCheatDay}
             disabled={cheatDaysLeft === 0}
           >
-            <Ionicons name="pizza" size={22} color={COLORS.white} />
-            <Text style={styles.cheatDayText}>
-              {cheatDaysLeft > 0 ? "USE CHEAT DAY" : "NO CHEAT DAYS LEFT"}
-            </Text>
+            <LinearGradient
+              colors={
+                cheatDaysLeft > 0
+                  ? [Colors.cyberLime, "#B8E600"]
+                  : [Colors.surfaceElevated, Colors.surfaceElevated]
+              }
+              style={styles.cheatDayGradient}
+            >
+              <Ionicons
+                name="pizza"
+                size={20}
+                color={cheatDaysLeft > 0 ? Colors.background : Colors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.cheatDayText,
+                  cheatDaysLeft === 0 && styles.cheatDayTextDisabled,
+                ]}
+              >
+                {cheatDaysLeft > 0
+                  ? `Use Cheat Day (${cheatDaysLeft} left)`
+                  : "No Cheat Days Left"}
+              </Text>
+            </LinearGradient>
           </Pressable>
+          <Text style={styles.cheatDayHint}>
+            Cheat days protect your streak when you need a break
+          </Text>
         </Animated.View>
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setShowEditModal(false)}
+        />
+        <View style={styles.modalContent}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>Edit Profile</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Display Name</Text>
+            <TextInput
+              style={styles.input}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Your name"
+              placeholderTextColor={Colors.textMuted}
+              autoFocus
+            />
+          </View>
+
+          <View style={styles.modalActions}>
+            <Pressable
+              style={styles.cancelButton}
+              onPress={() => setShowEditModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={styles.saveButton} onPress={handleSaveProfile}>
+              <LinearGradient
+                colors={[Colors.cyberLime, "#B8E600"]}
+                style={styles.saveButtonGradient}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -352,37 +586,30 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: Colors.background,
+  },
+  headerGradient: {
+    paddingBottom: Spacing.sm,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  settingsBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    justifyContent: "center",
-    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes["2xl"],
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
   },
-  shareBtn: {
+  settingsButton: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.pastelBlue,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -390,268 +617,421 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: Spacing.lg,
   },
   profileCard: {
-    backgroundColor: COLORS.pastelGreen,
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.cyberLime,
+  },
+  profileHeader: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: Spacing.lg,
+    marginBottom: Spacing.xl,
   },
   avatarContainer: {
     position: "relative",
-    marginBottom: 12,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.white,
-    borderWidth: 3,
-    borderColor: COLORS.black,
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.full,
     justifyContent: "center",
     alignItems: "center",
   },
+  avatarText: {
+    fontSize: Typography.sizes["2xl"],
+    fontFamily: Typography.fonts.heading,
+    color: Colors.background,
+  },
   levelBadge: {
     position: "absolute",
-    bottom: -6,
-    right: -10,
-    backgroundColor: COLORS.pastelYellow,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+    bottom: -4,
+    right: -4,
+    width: 26,
+    height: 26,
+    borderRadius: BorderRadius.full,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: Colors.background,
   },
   levelText: {
-    fontSize: 10,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.number,
+    color: Colors.background,
   },
   profileInfo: {
-    alignItems: "center",
-    marginBottom: 14,
+    flex: 1,
   },
   userName: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: COLORS.black,
-    marginBottom: 4,
+    fontSize: Typography.sizes.xl,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
   },
-  motto: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "rgba(0,0,0,0.6)",
-    fontStyle: "italic",
+  userMotto: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   xpSection: {
-    width: "100%",
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
   },
   xpHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 6,
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  xpLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
   },
   xpLabel: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: COLORS.muted,
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textPrimary,
   },
   xpValue: {
-    fontSize: 9,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textSecondary,
   },
   xpBarBg: {
-    height: 16,
-    backgroundColor: COLORS.white,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+    height: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.full,
     overflow: "hidden",
   },
   xpBarFill: {
     height: "100%",
-    backgroundColor: COLORS.pastelYellow,
-    borderRadius: 6,
+    borderRadius: BorderRadius.full,
   },
   xpHint: {
-    fontSize: 9,
-    fontWeight: "700",
-    color: COLORS.muted,
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
     textAlign: "right",
-    marginTop: 4,
+    marginTop: Spacing.xs,
   },
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginHorizontal: -4,
-    marginBottom: 14,
+    marginHorizontal: -Spacing.xs,
+    marginBottom: Spacing.lg,
   },
   statCard: {
-    width: "48%",
+    width: "31.33%",
     marginHorizontal: "1%",
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    alignItems: "center",
   },
-  statIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+  statCardLarge: {
+    width: "48%",
+    paddingVertical: Spacing.xl,
+  },
+  statIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   statValue: {
-    fontSize: 26,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes["3xl"],
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
+  },
+  statValueSmall: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
   },
   statLabel: {
-    fontSize: 8,
-    fontWeight: "800",
-    color: "rgba(0,0,0,0.5)",
-    letterSpacing: 0.5,
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
     marginTop: 2,
+    textAlign: "center",
   },
-  additionalStats: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+  chartCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  additionalStatRow: {
+  chartTitle: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+  },
+  chartSubtitle: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    marginBottom: Spacing.lg,
+  },
+  chartContainer: {
+    alignItems: "center",
+    paddingLeft: Spacing.sm,
+  },
+  pieChartContainer: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  additionalStatItem: {
+  pieCenter: {
     alignItems: "center",
   },
-  additionalStatValue: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: COLORS.black,
-    marginTop: 4,
+  pieCenterValue: {
+    fontSize: Typography.sizes.xl,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
   },
-  additionalStatLabel: {
-    fontSize: 8,
-    fontWeight: "800",
-    color: COLORS.muted,
-    marginTop: 2,
+  pieCenterLabel: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+  },
+  pieLegend: {
+    flex: 1,
+    marginLeft: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: BorderRadius.full,
+  },
+  legendText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodyMedium,
+    color: Colors.textPrimary,
+    flex: 1,
+  },
+  legendValueBadge: {
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    minWidth: 24,
+    alignItems: "center",
+  },
+  legendValue: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textSecondary,
   },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
   },
-  badgeCount: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: COLORS.muted,
+  badgeCountBadge: {
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  badgeCountText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textSecondary,
   },
   noBadges: {
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    padding: 18,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing["2xl"],
     alignItems: "center",
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     borderStyle: "dashed",
+    gap: Spacing.sm,
   },
   noBadgesText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: COLORS.muted,
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
   },
   badgesRow: {
-    gap: 10,
-    paddingRight: 16,
-    marginBottom: 16,
+    gap: Spacing.md,
+    paddingRight: Spacing.lg,
+    marginBottom: Spacing.xl,
   },
   badgeCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: COLORS.black,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
     width: 100,
   },
   badgeCardLocked: {
     opacity: 0.5,
   },
-  badgeIcon: {
+  badgeIconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.cyberLimeLight,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
+  },
+  badgeIconLocked: {
+    backgroundColor: Colors.surfaceElevated,
   },
   badgeEmoji: {
-    fontSize: 22,
+    fontSize: 24,
   },
   badgeName: {
-    fontSize: 10,
-    fontWeight: "900",
-    color: COLORS.black,
-    marginBottom: 2,
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
     textAlign: "center",
   },
   badgeTier: {
-    fontSize: 8,
-    fontWeight: "700",
-    color: COLORS.muted,
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
+  },
+  cheatDaySection: {
+    marginBottom: Spacing.xl,
   },
   cheatDayButton: {
-    backgroundColor: COLORS.black,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+  },
+  cheatDayButtonDisabled: {
+    opacity: 0.6,
+  },
+  cheatDayGradient: {
+    padding: Spacing.lg,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-  },
-  cheatDayButtonDisabled: {
-    opacity: 0.5,
+    gap: Spacing.sm,
   },
   cheatDayText: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: COLORS.white,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.background,
+  },
+  cheatDayTextDisabled: {
+    color: Colors.textMuted,
+  },
+  cheatDayHint: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
+    textAlign: "center",
+    marginTop: Spacing.sm,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  modalContent: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: BorderRadius["2xl"],
+    borderTopRightRadius: BorderRadius["2xl"],
+    padding: Spacing.lg,
+    paddingBottom: Spacing["3xl"],
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.borderDefault,
+    borderRadius: BorderRadius.full,
+    alignSelf: "center",
+    marginBottom: Spacing.lg,
+  },
+  modalTitle: {
+    fontSize: Typography.sizes.xl,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xl,
+  },
+  inputGroup: {
+    marginBottom: Spacing.lg,
+  },
+  inputLabel: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
+  },
+  input: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    padding: Spacing.md,
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textPrimary,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  cancelButton: {
+    flex: 1,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
+  },
+  saveButton: {
+    flex: 2,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+  },
+  saveButtonGradient: {
+    padding: Spacing.md,
+    alignItems: "center",
+  },
+  saveButtonText: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.background,
   },
 });

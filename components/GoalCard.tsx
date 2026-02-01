@@ -1,28 +1,16 @@
-import type { Goal } from '@/types';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { Goal } from "@/types";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import React from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring
-} from 'react-native-reanimated';
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
+
+import { BorderRadius, Colors, Spacing, Typography } from "@/constants/design";
 
 const AnimatedView = Animated.createAnimatedComponent(View);
-
-// Neu Soft-Brutalism Colors
-const COLORS = {
-  text: '#1F2937',
-  muted: '#6B7280',
-  primary: '#6366F1',
-  border: '#1F2937',
-  green: '#86EFAC',
-  yellow: '#FDE047',
-  pink: '#F9A8D4',
-  blue: '#93C5FD',
-};
-
-const GOAL_COLORS = [COLORS.yellow, COLORS.green, COLORS.pink, COLORS.blue];
 
 interface GoalCardProps {
   goal: Goal;
@@ -31,66 +19,106 @@ interface GoalCardProps {
 }
 
 export function GoalCard({ goal, onPress, onUpdateProgress }: GoalCardProps) {
-  const progressPercent = Math.min((goal.currentValue / goal.targetValue) * 100, 100);
+  const progressPercent = Math.min(
+    (goal.currentValue / goal.targetValue) * 100,
+    100,
+  );
   const progressWidth = useSharedValue(0);
-  
+
   React.useEffect(() => {
     progressWidth.value = withSpring(progressPercent, {
       damping: 20,
       stiffness: 100,
     });
   }, [progressPercent, progressWidth]);
-  
+
   const progressStyle = useAnimatedStyle(() => ({
     width: `${progressWidth.value}%`,
   }));
-  
+
   const isCompleted = goal.currentValue >= goal.targetValue;
-  const colorIndex = goal.title.length % GOAL_COLORS.length;
-  const cardColor = GOAL_COLORS[colorIndex];
-  
+
   return (
-    <Pressable onPress={onPress} style={[styles.container, { backgroundColor: cardColor }]}>
+    <Pressable
+      onPress={onPress}
+      style={[styles.container, isCompleted && styles.containerCompleted]}
+    >
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.iconBox}>
+        <View style={[styles.iconBox, isCompleted && styles.iconBoxCompleted]}>
           <Text style={styles.emoji}>{getGoalEmoji(goal.title)}</Text>
         </View>
         <View style={styles.titleContainer}>
-          <Text style={styles.title} numberOfLines={1}>{goal.title}</Text>
-          <Text style={styles.subtitle}>{goal.unit || 'Progress'}</Text>
+          <Text style={styles.title} numberOfLines={1}>
+            {goal.title}
+          </Text>
+          <View
+            style={[
+              styles.statusBadge,
+              isCompleted && styles.statusBadgeCompleted,
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusText,
+                isCompleted && styles.statusTextCompleted,
+              ]}
+            >
+              {isCompleted
+                ? "Completed"
+                : progressPercent >= 75
+                  ? "Almost there"
+                  : progressPercent >= 50
+                    ? "On track"
+                    : "In progress"}
+            </Text>
+          </View>
         </View>
         {isCompleted && (
           <View style={styles.completedBadge}>
-            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+            <Ionicons name="checkmark" size={14} color={Colors.background} />
           </View>
         )}
       </View>
-      
+
       {/* Progress */}
       <View style={styles.progressContainer}>
-        <View style={styles.progressBar}>
-          <AnimatedView style={[styles.progressFill, progressStyle]} />
+        <View style={styles.progressInfo}>
+          <Text style={styles.progressValue}>
+            {goal.currentValue} / {goal.targetValue}
+          </Text>
+          <Text style={styles.progressUnit}>{goal.unit || "units"}</Text>
         </View>
-        <Text style={styles.progressText}>
-          {goal.currentValue} / {goal.targetValue}
+        <Text style={styles.progressPercent}>
+          {Math.round(progressPercent)}%
         </Text>
+      </View>
+
+      <View style={styles.progressBar}>
+        <AnimatedView
+          style={[
+            styles.progressFill,
+            progressStyle,
+            isCompleted && styles.progressFillCompleted,
+          ]}
+        />
       </View>
 
       {/* Actions */}
       {onUpdateProgress && !isCompleted && (
         <View style={styles.actions}>
-          <Pressable 
+          <Pressable
             style={styles.decrementButton}
             onPress={() => onUpdateProgress(Math.max(0, goal.currentValue - 1))}
           >
-            <Ionicons name="remove" size={18} color={COLORS.text} />
+            <Ionicons name="remove" size={16} color={Colors.textSecondary} />
           </Pressable>
-          <Pressable 
+          <Pressable
             style={styles.incrementButton}
             onPress={() => onUpdateProgress(goal.currentValue + 1)}
           >
-            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Ionicons name="add" size={16} color={Colors.background} />
+            <Text style={styles.incrementText}>Add +1</Text>
           </Pressable>
         </View>
       )}
@@ -100,41 +128,44 @@ export function GoalCard({ goal, onPress, onUpdateProgress }: GoalCardProps) {
 
 function getGoalEmoji(title: string): string {
   const lower = title.toLowerCase();
-  if (lower.includes('read')) return '📚';
-  if (lower.includes('workout') || lower.includes('gym')) return '💪';
-  if (lower.includes('run')) return '🏃';
-  if (lower.includes('code')) return '💻';
-  if (lower.includes('money') || lower.includes('save')) return '💰';
-  if (lower.includes('meditat')) return '🧘';
-  return '🎯';
+  if (lower.includes("read")) return "📚";
+  if (lower.includes("workout") || lower.includes("gym")) return "💪";
+  if (lower.includes("run")) return "🏃";
+  if (lower.includes("code")) return "💻";
+  if (lower.includes("money") || lower.includes("save")) return "💰";
+  if (lower.includes("meditat")) return "🧘";
+  return "🎯";
 }
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 2.5,
-    borderColor: '#1F2937',
-    shadowColor: '#1F2937',
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  containerCompleted: {
+    backgroundColor: Colors.surfaceElevated,
+    borderColor: Colors.borderMuted,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: Spacing.lg,
   },
   iconBox: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.cyberLimeLight,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: Spacing.md,
+  },
+  iconBoxCompleted: {
+    backgroundColor: "rgba(0, 255, 136, 0.15)",
   },
   emoji: {
     fontSize: 22,
@@ -143,71 +174,105 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#1F2937',
+    fontSize: Typography.sizes.lg,
+    fontWeight: Typography.weights.bold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
   },
-  subtitle: {
-    fontSize: 12,
-    color: '#4B5563',
-    fontWeight: '600',
-    marginTop: 2,
+  statusBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: Colors.cyberLimeLight,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  statusBadgeCompleted: {
+    backgroundColor: "rgba(0, 255, 136, 0.15)",
+  },
+  statusText: {
+    fontSize: Typography.sizes.xs,
+    fontWeight: Typography.weights.semibold,
+    color: Colors.cyberLime,
+  },
+  statusTextCompleted: {
+    color: Colors.success,
   },
   completedBadge: {
     width: 28,
     height: 28,
-    borderRadius: 14,
-    backgroundColor: '#22C55E',
-    borderWidth: 2,
-    borderColor: '#1F2937',
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.success,
+    justifyContent: "center",
+    alignItems: "center",
   },
   progressContainer: {
-    marginBottom: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: Spacing.sm,
+  },
+  progressInfo: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: Spacing.xs,
+  },
+  progressValue: {
+    fontSize: Typography.sizes.xl,
+    fontWeight: Typography.weights.bold,
+    color: Colors.textPrimary,
+  },
+  progressUnit: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.textSecondary,
+  },
+  progressPercent: {
+    fontSize: Typography.sizes.md,
+    fontWeight: Typography.weights.black,
+    color: Colors.cyberLime,
   },
   progressBar: {
-    height: 10,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: '#1F2937',
-    overflow: 'hidden',
-    marginBottom: 8,
+    height: 8,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+    marginBottom: Spacing.lg,
   },
   progressFill: {
-    height: '100%',
-    backgroundColor: '#1F2937',
-    borderRadius: 4,
+    height: "100%",
+    backgroundColor: Colors.cyberLime,
+    borderRadius: BorderRadius.full,
   },
-  progressText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1F2937',
+  progressFillCompleted: {
+    backgroundColor: Colors.success,
   },
   actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: Spacing.sm,
   },
   decrementButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    borderWidth: 2,
-    borderColor: '#1F2937',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    justifyContent: "center",
+    alignItems: "center",
   },
   incrementButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: '#6366F1',
-    borderWidth: 2,
-    borderColor: '#1F2937',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.cyberLime,
+    justifyContent: "center",
+  },
+  incrementText: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: Typography.weights.bold,
+    color: Colors.background,
   },
 });

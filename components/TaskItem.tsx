@@ -1,34 +1,25 @@
-import type { Task } from '@/types';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import * as Haptics from 'expo-haptics';
-import React, { useCallback } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { Task } from "@/types";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
+import React, { useCallback } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSequence,
   withSpring,
-  withTiming
-} from 'react-native-reanimated';
+  withTiming,
+} from "react-native-reanimated";
+
+import {
+  BorderRadius,
+  Colors,
+  getCategoryColor,
+  Spacing,
+  Typography,
+} from "@/constants/design";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-// Neu Soft-Brutalism Colors
-const COLORS = {
-  text: '#1F2937',
-  textMuted: '#6B7280',
-  border: '#1F2937',
-  white: '#FFFFFF',
-};
-
-const CATEGORY_STYLES: Record<string, { bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  health: { bg: '#86EFAC', icon: 'heart' },
-  work: { bg: '#93C5FD', icon: 'briefcase' },
-  personal: { bg: '#FDE047', icon: 'person' },
-  learning: { bg: '#C4B5FD', icon: 'book' },
-  fitness: { bg: '#FDBA74', icon: 'barbell' },
-  mindfulness: { bg: '#F9A8D4', icon: 'leaf' },
-};
 
 interface TaskItemProps {
   task: Task;
@@ -38,82 +29,124 @@ interface TaskItemProps {
   onDelete?: () => void;
 }
 
-export function TaskItem({ 
-  task, 
-  isCompleted, 
-  streak = 0, 
+export function TaskItem({
+  task,
+  isCompleted,
+  streak = 0,
   onToggle,
 }: TaskItemProps) {
   const scale = useSharedValue(1);
   const checkScale = useSharedValue(isCompleted ? 1 : 0);
-  
+
   React.useEffect(() => {
     checkScale.value = withSpring(isCompleted ? 1 : 0, {
       damping: 12,
       stiffness: 150,
     });
   }, [isCompleted, checkScale]);
-  
+
   const handleToggle = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     scale.value = withSequence(
-      withTiming(0.92, { duration: 80 }),
-      withSpring(1, { damping: 10, stiffness: 300 })
+      withTiming(0.95, { duration: 80 }),
+      withSpring(1, { damping: 10, stiffness: 300 }),
     );
-    
+
     onToggle();
   }, [onToggle, scale]);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
-  
-  const checkStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: checkScale.value }],
-    opacity: checkScale.value,
-  }));
-  
-  const style = CATEGORY_STYLES[task.category] || CATEGORY_STYLES.personal;
-  
+
+  const categoryColor = getCategoryColor(task.category);
+
+  const getCategoryIcon = (): keyof typeof Ionicons.glyphMap => {
+    switch (task.category) {
+      case "health":
+        return "heart-outline";
+      case "fitness":
+        return "barbell-outline";
+      case "mindfulness":
+        return "leaf-outline";
+      case "learning":
+        return "book-outline";
+      case "work":
+        return "briefcase-outline";
+      default:
+        return "ellipse-outline";
+    }
+  };
+
   return (
     <AnimatedPressable
       onPress={handleToggle}
       style={[
-        styles.container, 
-        { backgroundColor: isCompleted ? '#E5E7EB' : style.bg },
-        animatedStyle
+        styles.container,
+        isCompleted && styles.containerCompleted,
+        animatedStyle,
       ]}
     >
-      {/* Icon */}
-      <View style={styles.iconContainer}>
-        <Ionicons name={style.icon} size={20} color={COLORS.text} />
-      </View>
-      
       {/* Checkbox */}
-      <View style={[styles.checkOutline, isCompleted && styles.checkOutlineCompleted]}>
-        {isCompleted ? (
-          <View style={styles.checkFill}>
-            <Ionicons name="checkmark" size={14} color={COLORS.white} />
-          </View>
-        ) : null}
+      <View style={[styles.checkbox, isCompleted && styles.checkboxDone]}>
+        {isCompleted && (
+          <Ionicons name="checkmark" size={14} color={Colors.background} />
+        )}
       </View>
-      
+
       {/* Content */}
       <View style={styles.content}>
-        <Text style={[styles.name, isCompleted && styles.completedText]} numberOfLines={2}>
+        <Text
+          style={[styles.name, isCompleted && styles.completedText]}
+          numberOfLines={2}
+        >
           {task.name}
         </Text>
         <View style={styles.metaRow}>
-          <Ionicons 
-            name={task.timeOfDay === 'morning' ? 'sunny' : task.timeOfDay === 'evening' ? 'moon' : 'time'} 
-            size={12} 
-            color={isCompleted ? '#9CA3AF' : '#4B5563'} 
-          />
-          <Text style={[styles.meta, isCompleted && styles.metaCompleted]}>
-            {task.timeOfDay.charAt(0).toUpperCase() + task.timeOfDay.slice(1)}
-          </Text>
+          {streak > 0 ? (
+            <View style={styles.streakBadge}>
+              <Ionicons name="flame" size={10} color={Colors.warning} />
+              <Text style={styles.streakText}>{streak} day streak</Text>
+            </View>
+          ) : (
+            <>
+              <Ionicons
+                name={
+                  task.timeOfDay === "morning"
+                    ? "sunny-outline"
+                    : task.timeOfDay === "evening"
+                      ? "moon-outline"
+                      : "time-outline"
+                }
+                size={12}
+                color={isCompleted ? Colors.textMuted : Colors.textSecondary}
+              />
+              <Text style={[styles.meta, isCompleted && styles.metaCompleted]}>
+                {task.timeOfDay.charAt(0).toUpperCase() +
+                  task.timeOfDay.slice(1)}
+              </Text>
+            </>
+          )}
         </View>
+      </View>
+
+      {/* Category Icon */}
+      <View
+        style={[
+          styles.iconContainer,
+          {
+            backgroundColor: isCompleted
+              ? Colors.surface
+              : `${categoryColor}15`,
+          },
+        ]}
+      >
+        <Ionicons
+          name={getCategoryIcon()}
+          size={18}
+          color={isCompleted ? Colors.textMuted : categoryColor}
+        />
       </View>
     </AnimatedPressable>
   );
@@ -121,74 +154,75 @@ export function TaskItem({
 
 const styles = StyleSheet.create({
   container: {
-    width: '48%',
-    aspectRatio: 0.95,
-    borderRadius: 22,
-    padding: 14,
-    marginBottom: 14,
-    justifyContent: 'space-between',
-    borderWidth: 2.5,
-    borderColor: '#1F2937',
-    shadowColor: '#1F2937',
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  iconContainer: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  containerCompleted: {
+    backgroundColor: Colors.surfaceElevated,
+    borderColor: Colors.borderMuted,
   },
-  checkOutline: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 2.5,
-    borderColor: 'rgba(31,41,55,0.3)',
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 2,
+    borderColor: Colors.borderDefault,
+    backgroundColor: Colors.surfaceElevated,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  checkOutlineCompleted: {
-    borderColor: '#1F2937',
-    backgroundColor: '#1F2937',
-  },
-  checkFill: {
-    justifyContent: 'center',
-    alignItems: 'center',
+  checkboxDone: {
+    backgroundColor: Colors.cyberLime,
+    borderColor: Colors.cyberLime,
   },
   content: {
-    marginTop: 'auto',
+    flex: 1,
   },
   name: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1F2937',
-    lineHeight: 20,
-    marginBottom: 6,
+    fontSize: Typography.sizes.md,
+    fontWeight: Typography.weights.semibold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
   },
   completedText: {
-    color: '#6B7280',
-    textDecorationLine: 'line-through',
+    color: Colors.textMuted,
+    textDecorationLine: "line-through",
   },
   metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
   },
   meta: {
-    fontSize: 12,
-    color: '#4B5563',
-    fontWeight: '600',
+    fontSize: Typography.sizes.xs,
+    color: Colors.textSecondary,
+    fontWeight: Typography.weights.medium,
   },
   metaCompleted: {
-    color: '#9CA3AF',
+    color: Colors.textMuted,
+  },
+  streakBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  streakText: {
+    fontSize: Typography.sizes.xs,
+    fontWeight: Typography.weights.medium,
+    color: Colors.warning,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    justifyContent: "center",
+    alignItems: "center",
   },
 });

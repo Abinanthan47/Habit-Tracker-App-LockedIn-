@@ -1,7 +1,11 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Dimensions,
   Platform,
   Pressable,
   RefreshControl,
@@ -13,187 +17,232 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useApp } from "@/context/AppContext";
-import { getToday } from "@/lib/dates";
+import { AchievementScreen } from "@/app/achievements";
+import { DailyStreakPopup } from "@/components/DailyStreakPopup";
+import { StreakWidget } from "@/components/StreakWidget";
 
-// Neo-Brutalism Vibrant Colors
-const COLORS = {
-  bg: "#FF7F50",
-  pastelGreen: "#C1FF72",
-  pastelPurple: "#C5B4E3",
-  pastelPink: "#FFB1D8",
-  pastelBlue: "#A0D7FF",
-  pastelYellow: "#FDFD96",
-  white: "#FFFFFF",
-  black: "#000000",
-  muted: "rgba(0,0,0,0.6)",
-};
+import {
+  BorderRadius,
+  Colors,
+  Layout,
+  Spacing,
+  Typography,
+  getCategoryColor,
+  getHeatmapColor,
+} from "@/constants/design";
+import { useApp } from "@/context/AppContext";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+// Calendar heatmap configuration for monthly view
+const CELL_SIZE = 36;
+const CELL_GAP = 4;
+const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function HomeScreen() {
   const {
     profile,
-    currentStreak,
-    longestStreak,
     tasks,
     completions,
+    goals,
     activities,
+    currentStreak,
+    longestStreak,
+    todayCompletionRate,
     refreshData,
+    getTasksForToday,
     getCompletionsForDate,
   } = useApp();
 
   const [refreshing, setRefreshing] = useState(false);
-  const today = getToday();
-  const now = new Date();
+  const [showDailyPopup, setShowDailyPopup] = useState(false);
+  const [showAchievements, setShowAchievements] = useState(false);
 
-  // Get current month info
+  const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
-  const monthNames = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ];
+  // Use local timezone date format
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
-  // Generate MONTHLY heatmap data (current month only)
-  const monthlyHeatmapData = useMemo(() => {
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const data: { date: string; level: number; dayNum: number }[] = [];
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(currentYear, currentMonth, day);
-      const dateStr = date.toISOString().split("T")[0];
-
-      // Only show data for days up to today
-      if (date <= now) {
-        const activity = activities.find((a) => a.date === dateStr);
-        let level = 0;
-        if (activity) {
-          if (activity.completionRate >= 80) level = 1;
-          else if (activity.completionRate >= 50) level = 0.5;
-          else if (activity.completionRate > 0) level = 0.25;
-        }
-        data.push({ date: dateStr, level, dayNum: day });
-      } else {
-        data.push({ date: dateStr, level: -1, dayNum: day }); // Future day
+  // Show daily streak popup on first app launch of the day
+  useEffect(() => {
+    const checkFirstLaunchToday = async () => {
+      const lastLaunchDate = await AsyncStorage.getItem("lastLaunchDate");
+      if (lastLaunchDate !== today) {
+        await AsyncStorage.setItem("lastLaunchDate", today);
+        // Small delay to let the screen render first
+        setTimeout(() => setShowDailyPopup(true), 500);
       }
-    }
-    return data;
-  }, [activities, currentMonth, currentYear, now]);
-
-  // Today's stats from real data
-  const todayCompletions = useMemo(() => {
-    return completions.filter((c) => c.date === today);
-  }, [completions, today]);
-
-  const todayTotal = tasks.length;
-  const todayCompleted = todayCompletions.length;
-  const todayPercent =
-    todayTotal > 0 ? Math.round((todayCompleted / todayTotal) * 100) : 0;
-
-  // Calculate month completion from activities
-  const monthCompletion = useMemo(() => {
-    const monthActivities = activities.filter((a) => {
-      const date = new Date(a.date);
-      return (
-        date.getMonth() === currentMonth && date.getFullYear() === currentYear
-      );
-    });
-    if (monthActivities.length === 0) return 0;
-    const avgCompletion =
-      monthActivities.reduce((sum, a) => sum + a.completionRate, 0) /
-      monthActivities.length;
-    return Math.round(avgCompletion);
-  }, [activities, currentMonth, currentYear]);
-
-  // Weekly stats from real data
-  const weeklyStats = useMemo(() => {
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-
-    let completed = 0;
-    let total = 0;
-
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(weekStart);
-      date.setDate(date.getDate() + i);
-      if (date > now) break;
-
-      const dateStr = date.toISOString().split("T")[0];
-      const dayCompletions = completions.filter((c) => c.date === dateStr);
-      completed += dayCompletions.length;
-      total += tasks.length;
-    }
-
-    return {
-      completed,
-      total: total || 1,
-      percent: total > 0 ? Math.round((completed / total) * 100) : 0,
     };
-  }, [completions, tasks, now]);
-
-  // Monthly progress
-  const monthlyStats = useMemo(() => {
-    const monthStart = new Date(currentYear, currentMonth, 1);
-    let completed = 0;
-    let total = 0;
-
-    for (
-      let d = new Date(monthStart);
-      d <= now && d.getMonth() === currentMonth;
-      d.setDate(d.getDate() + 1)
-    ) {
-      const dateStr = d.toISOString().split("T")[0];
-      const dayCompletions = completions.filter((c) => c.date === dateStr);
-      completed += dayCompletions.length;
-      total += tasks.length;
-    }
-
-    return {
-      completed,
-      total: total || 1,
-      percent: total > 0 ? Math.round((completed / total) * 100) : 0,
-    };
-  }, [completions, tasks, currentMonth, currentYear, now]);
+    checkFirstLaunchToday();
+  }, [today]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await refreshData();
     setRefreshing(false);
   }, [refreshData]);
 
-  // Bottom padding for tab bar
-  const TAB_BAR_HEIGHT = 64;
-  const BOTTOM_MARGIN = Platform.OS === "ios" ? 24 : 12;
-  const bottomPadding = TAB_BAR_HEIGHT + BOTTOM_MARGIN + 80;
+  // Get greeting based on time of day
+  const greeting = useMemo(() => {
+    const hour = now.getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
+  }, [now]);
+
+  // Today's tasks
+  const todaysTasks = useMemo(() => getTasksForToday(), [getTasksForToday]);
+  const todaysCompletions = useMemo(
+    () => getCompletionsForDate(today),
+    [getCompletionsForDate, today],
+  );
+  const completedToday = todaysCompletions.length;
+  const totalToday = todaysTasks.length;
+
+  // Calculate active days this month
+  const activeDaysThisMonth = useMemo(() => {
+    return activities.filter((a) => {
+      const date = new Date(a.date);
+      return (
+        date.getMonth() === currentMonth &&
+        date.getFullYear() === currentYear &&
+        a.completionRate >= 50
+      );
+    }).length;
+  }, [activities, currentMonth, currentYear]);
+
+  // Generate monthly calendar data
+  const monthlyCalendarData = useMemo(() => {
+    const year = currentYear;
+    const month = currentMonth;
+
+    // Get first day of month and number of days
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDayOfWeek = firstDay.getDay(); // 0 = Sunday
+
+    // Create calendar grid (6 weeks max)
+    const weeks: {
+      date: string | null;
+      day: number | null;
+      level: number;
+    }[][] = [];
+    let currentWeek: {
+      date: string | null;
+      day: number | null;
+      level: number;
+    }[] = [];
+
+    // Add empty cells for days before first day of month
+    for (let i = 0; i < startDayOfWeek; i++) {
+      currentWeek.push({ date: null, day: null, level: 0 });
+    }
+
+    // Add days of month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      const dateStr = date.toISOString().split("T")[0];
+      const activity = activities.find((a) => a.date === dateStr);
+      const level = activity ? activity.completionRate / 100 : 0;
+
+      currentWeek.push({ date: dateStr, day, level });
+
+      if (currentWeek.length === 7) {
+        weeks.push([...currentWeek]);
+        currentWeek = [];
+      }
+    }
+
+    // Fill remaining cells in last week
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) {
+        currentWeek.push({ date: null, day: null, level: 0 });
+      }
+      weeks.push(currentWeek);
+    }
+
+    return weeks;
+  }, [activities, currentMonth, currentYear]);
+
+  // Get month name
+  const monthName = useMemo(() => {
+    return new Date(currentYear, currentMonth).toLocaleDateString("en-US", {
+      month: "long",
+    });
+  }, [currentMonth, currentYear]);
+
+  // Streak visualization data (Sunday to Saturday)
+  const streakVisualization = useMemo(() => {
+    const data = [];
+    // Find the most recent Sunday
+    const todayDate = new Date(now);
+    const dayOfWeek = todayDate.getDay(); // 0 = Sunday
+    const startOfWeek = new Date(todayDate);
+    startOfWeek.setDate(todayDate.getDate() - dayOfWeek);
+
+    // Generate 7 days starting from Sunday
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + i);
+      const dateStr = date.toISOString().split("T")[0];
+      const activity = activities.find((a) => a.date === dateStr);
+      const isFuture = date > todayDate;
+
+      data.push({
+        day: DAYS_OF_WEEK[i],
+        date: dateStr,
+        completed: activity ? activity.tasksCompleted : 0,
+        total: activity ? activity.taskTotal : 0,
+        rate: activity ? activity.completionRate : 0,
+        isToday: dateStr === today,
+        isFuture,
+      });
+    }
+    return data;
+  }, [activities, now, today]);
+
+  const TAB_BAR_HEIGHT = Layout.tabBarHeight;
+  const bottomPadding = TAB_BAR_HEIGHT + (Platform.OS === "ios" ? 24 : 16) + 20;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={20} color={COLORS.black} />
-          </View>
-          <View>
-            <Text style={styles.welcomeText}>READY TO CRUSH IT?</Text>
+      {/* Header with gradient */}
+      <LinearGradient
+        colors={[Colors.surface, Colors.background]}
+        style={styles.headerGradient}
+      >
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.greeting}>{greeting}</Text>
             <Text style={styles.userName}>
               {profile?.displayName || "Achiever"}
             </Text>
           </View>
+          <View style={styles.headerRight}>
+            <Pressable
+              style={styles.achievementsButton}
+              onPress={() => setShowAchievements(true)}
+            >
+              <Ionicons name="trophy" size={20} color={Colors.cyberLime} />
+            </Pressable>
+            <Pressable
+              style={styles.levelBadge}
+              onPress={() => router.push("/(tabs)/profile")}
+            >
+              <LinearGradient
+                colors={[Colors.warning, "#FF8C00"]}
+                style={styles.levelGradient}
+              >
+                <Ionicons name="star" size={12} color={Colors.background} />
+              </LinearGradient>
+              <Text style={styles.levelText}>Lv.{profile?.level || 1}</Text>
+            </Pressable>
+          </View>
         </View>
-        <Pressable style={styles.notificationBtn}>
-          <Ionicons name="notifications" size={22} color={COLORS.black} />
-        </Pressable>
-      </View>
+      </LinearGradient>
 
       <ScrollView
         style={styles.scrollView}
@@ -206,298 +255,291 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={COLORS.black}
+            tintColor={Colors.cyberLime}
           />
         }
       >
-        {/* Hero Streak Card */}
-        <Animated.View entering={FadeInDown.delay(100)} style={styles.heroCard}>
-          <View style={styles.heroContent}>
-            <Text style={styles.heroLabel}>CURRENT STREAK</Text>
-            <Text style={styles.heroValue}>{currentStreak} Days</Text>
-            <Text style={styles.heroBest}>Best: {longestStreak} Days</Text>
-            <Pressable
-              style={styles.heroButton}
-              onPress={() => router.push("/(tabs)/tasks")}
-            >
-              <Text style={styles.heroButtonText}>LETS GO!</Text>
-              <Ionicons name="arrow-forward" size={16} color={COLORS.black} />
-            </Pressable>
-          </View>
-          <View style={styles.heroEmojiContainer}>
-            <Text style={styles.heroEmoji}>🕺</Text>
-            <Text style={styles.sparkle}>✨</Text>
-          </View>
+        {/* Streak Widget with Lottie Animation */}
+        <Animated.View entering={FadeInDown.delay(50)}>
+          <StreakWidget />
         </Animated.View>
 
-        {/* Overall Stats Card */}
+        {/* Quick Stats */}
+        <Animated.View entering={FadeInDown.delay(100)} style={styles.statsRow}>
+          <LinearGradient
+            colors={[`${Colors.cyberLime}15`, `${Colors.cyberLime}05`]}
+            style={styles.statCard}
+          >
+            <View
+              style={[
+                styles.statIconBg,
+                { backgroundColor: `${Colors.cyberLime}30` },
+              ]}
+            >
+              <Ionicons
+                name="checkmark-done"
+                size={18}
+                color={Colors.cyberLime}
+              />
+            </View>
+            <Text style={styles.statValue}>
+              {completedToday}/{totalToday}
+            </Text>
+            <Text style={styles.statLabel}>Today</Text>
+          </LinearGradient>
+          <LinearGradient
+            colors={[`${Colors.info}15`, `${Colors.info}05`]}
+            style={styles.statCard}
+          >
+            <View
+              style={[
+                styles.statIconBg,
+                { backgroundColor: `${Colors.info}30` },
+              ]}
+            >
+              <Ionicons name="calendar" size={18} color={Colors.info} />
+            </View>
+            <Text style={styles.statValue}>{activeDaysThisMonth}</Text>
+            <Text style={styles.statLabel}>Active Days</Text>
+          </LinearGradient>
+          <LinearGradient
+            colors={[`${Colors.success}15`, `${Colors.success}05`]}
+            style={styles.statCard}
+          >
+            <View
+              style={[
+                styles.statIconBg,
+                { backgroundColor: `${Colors.success}30` },
+              ]}
+            >
+              <Ionicons name="trending-up" size={18} color={Colors.success} />
+            </View>
+            <Text style={styles.statValue}>{todayCompletionRate}%</Text>
+            <Text style={styles.statLabel}>Progress</Text>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* Monthly Calendar Heatmap */}
         <Animated.View
           entering={FadeInDown.delay(150)}
-          style={styles.masterCard}
-        >
-          <View>
-            <Text style={styles.masterLabel}>TODAY'S PROGRESS</Text>
-            <View style={styles.masterRow}>
-              <Text style={styles.masterValue}>
-                {todayCompleted}/{todayTotal}
-              </Text>
-              <Text style={styles.masterEmoji}>
-                {todayPercent >= 80 ? "🔥" : todayPercent >= 50 ? "💪" : "🎯"}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.legendBadge}>
-            <Text style={styles.legendBadgeText}>{todayPercent}%</Text>
-          </View>
-        </Animated.View>
-
-        {/* Monthly Consistency Map */}
-        <Animated.View
-          entering={FadeInDown.delay(200)}
           style={styles.heatmapCard}
         >
           <View style={styles.heatmapHeader}>
-            <Text style={styles.heatmapTitle}>
-              {monthNames[currentMonth]} Activity
+            <Text style={styles.sectionTitle}>
+              {monthName} {currentYear}
             </Text>
-            <View style={styles.yearBadge}>
-              <Text style={styles.yearText}>{currentYear}</Text>
+            <View style={styles.legendInline}>
+              <Text style={styles.legendLabel}>Activity</Text>
+              {[0, 0.25, 0.5, 0.8, 1].map((level, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.legendCell,
+                    { backgroundColor: getHeatmapColor(level) },
+                  ]}
+                />
+              ))}
             </View>
           </View>
 
-          {/* Heatmap Grid - Calendar Style */}
+          {/* Day of Week Headers */}
+          <View style={styles.dayHeaders}>
+            {DAYS_OF_WEEK.map((day) => (
+              <Text key={day} style={styles.dayHeaderText}>
+                {day.slice(0, 3)}
+              </Text>
+            ))}
+          </View>
+
+          {/* Calendar Grid */}
           <View style={styles.calendarGrid}>
-            {/* Day headers */}
-            <View style={styles.dayHeaders}>
-              {["S", "M", "T", "W", "T", "F", "S"].map((day, i) => (
-                <Text key={i} style={styles.dayHeaderText}>
-                  {day}
-                </Text>
-              ))}
-            </View>
-
-            {/* Calendar cells */}
-            <View style={styles.calendarCells}>
-              {/* Empty cells for first week offset */}
-              {Array.from({
-                length: new Date(currentYear, currentMonth, 1).getDay(),
-              }).map((_, i) => (
-                <View key={`empty-${i}`} style={styles.calendarCellEmpty} />
-              ))}
-
-              {/* Day cells */}
-              {monthlyHeatmapData.map((item, index) => {
-                const isToday = item.date === today;
-                const isFuture = item.level === -1;
-
-                let bgColor = "rgba(255,255,255,0.3)";
-                if (!isFuture) {
-                  if (item.level >= 1) bgColor = COLORS.pastelGreen;
-                  else if (item.level >= 0.5) bgColor = "rgba(193,255,114,0.7)";
-                  else if (item.level > 0) bgColor = "rgba(193,255,114,0.4)";
-                }
-
-                return (
+            {monthlyCalendarData.map((week, weekIndex) => (
+              <View key={weekIndex} style={styles.calendarWeek}>
+                {week.map((day, dayIndex) => (
                   <View
-                    key={item.date}
+                    key={dayIndex}
                     style={[
                       styles.calendarCell,
-                      { backgroundColor: bgColor },
-                      isToday && styles.calendarCellToday,
-                      isFuture && styles.calendarCellFuture,
+                      day.date && {
+                        backgroundColor: getHeatmapColor(day.level),
+                      },
+                      !day.date && styles.calendarCellEmpty,
+                      day.date === today && styles.calendarCellToday,
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.calendarCellText,
-                        isFuture && styles.calendarCellTextFuture,
-                      ]}
-                    >
-                      {item.dayNum}
-                    </Text>
+                    {day.day && (
+                      <Text
+                        style={[
+                          styles.calendarDayText,
+                          day.level >= 0.8 && styles.calendarDayTextActive,
+                          day.date === today && styles.calendarDayTextToday,
+                        ]}
+                      >
+                        {day.day}
+                      </Text>
+                    )}
                   </View>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.heatmapFooter}>
-            <View>
-              <Text style={styles.completionLabel}>MONTH COMPLETION</Text>
-              <Text style={styles.completionValue}>{monthCompletion}% 🔥</Text>
-            </View>
-            <View style={styles.legend}>
-              <Text style={styles.legendText}>0%</Text>
-              <View
-                style={[
-                  styles.legendCell,
-                  { backgroundColor: "rgba(255,255,255,0.3)" },
-                ]}
-              />
-              <View
-                style={[
-                  styles.legendCell,
-                  { backgroundColor: "rgba(193,255,114,0.5)" },
-                ]}
-              />
-              <View
-                style={[
-                  styles.legendCell,
-                  { backgroundColor: COLORS.pastelGreen },
-                ]}
-              />
-              <Text style={styles.legendText}>100%</Text>
-            </View>
+                ))}
+              </View>
+            ))}
           </View>
         </Animated.View>
 
-        {/* Weekly Mission */}
-        <Animated.View
-          entering={FadeInDown.delay(300)}
-          style={styles.progressCard}
-        >
-          <View style={styles.progressHeader}>
-            <View>
-              <Text style={styles.progressLabel}>WEEKLY MISSION</Text>
-              <Text style={styles.progressValue}>
-                {weeklyStats.completed}/{weeklyStats.total}
-              </Text>
-            </View>
-            <View style={styles.progressBadge}>
-              <Text style={styles.progressBadgeText}>
-                {weeklyStats.percent}%
-              </Text>
-            </View>
+        {/* Today's Habits Preview */}
+        <Animated.View entering={FadeInDown.delay(200)}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Today's Habits</Text>
+            <Pressable onPress={() => router.push("/(tabs)/tasks")}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </Pressable>
           </View>
-          <View style={styles.progressBarBg}>
-            <View
-              style={[
-                styles.progressBarFill,
-                { width: `${Math.min(weeklyStats.percent, 100)}%` },
-              ]}
-            />
-          </View>
-        </Animated.View>
 
-        {/* Monthly Goal */}
-        <Animated.View
-          entering={FadeInDown.delay(350)}
-          style={styles.progressCardBlue}
-        >
-          <View style={styles.progressHeader}>
-            <View>
-              <Text style={styles.progressLabel}>MONTHLY GOAL</Text>
-              <Text style={styles.progressValue}>
-                {monthlyStats.completed}/{monthlyStats.total}
-              </Text>
-            </View>
-            <View style={styles.progressBadgeWhite}>
-              <Text style={styles.progressBadgeTextBlack}>
-                {monthlyStats.percent}%
-              </Text>
-            </View>
-          </View>
-          <View style={styles.progressBarBg}>
-            <View
-              style={[
-                styles.progressBarFillPink,
-                { width: `${Math.min(monthlyStats.percent, 100)}%` },
-              ]}
-            />
-          </View>
-        </Animated.View>
-
-        {/* Today's Rituals */}
-        <Animated.View entering={FadeInDown.delay(400)}>
-          <Text style={styles.sectionTitle}>Today's Rituals</Text>
-
-          {tasks.length === 0 ? (
-            <Pressable
-              style={styles.emptyCard}
-              onPress={() => router.push("/add-task")}
+          {todaysTasks.length === 0 ? (
+            <LinearGradient
+              colors={[`${Colors.cyberLime}10`, "transparent"]}
+              style={styles.emptyHabits}
             >
               <Ionicons
                 name="add-circle-outline"
                 size={32}
-                color={COLORS.black}
+                color={Colors.cyberLime}
               />
-              <Text style={styles.emptyText}>Add your first habit!</Text>
-            </Pressable>
-          ) : (
-            tasks.slice(0, 3).map((task, index) => {
-              const isCompleted = todayCompletions.some(
-                (c) => c.taskId === task.id
-              );
-              const bgColors = [
-                COLORS.pastelYellow,
-                COLORS.white,
-                COLORS.pastelGreen,
-              ];
-
-              return (
-                <Pressable
-                  key={task.id}
-                  style={[
-                    styles.taskPreview,
-                    { backgroundColor: bgColors[index % bgColors.length] },
-                  ]}
-                  onPress={() => router.push("/(tabs)/tasks")}
+              <Text style={styles.emptyHabitsText}>No habits yet</Text>
+              <Pressable
+                style={styles.addHabitButton}
+                onPress={() => router.push("/add-task")}
+              >
+                <LinearGradient
+                  colors={[Colors.cyberLime, "#B8E600"]}
+                  style={styles.addHabitGradient}
                 >
-                  <View style={styles.taskPreviewLeft}>
+                  <Text style={styles.addHabitText}>
+                    Create your first habit
+                  </Text>
+                </LinearGradient>
+              </Pressable>
+            </LinearGradient>
+          ) : (
+            <View style={styles.habitsList}>
+              {todaysTasks.slice(0, 4).map((task, index) => {
+                const isCompleted = todaysCompletions.some(
+                  (c) => c.taskId === task.id,
+                );
+                return (
+                  <View key={task.id} style={styles.habitPreviewCard}>
+                    <View style={styles.habitPreviewLeft}>
+                      <View
+                        style={[
+                          styles.habitCheckbox,
+                          isCompleted && styles.habitCheckboxCompleted,
+                        ]}
+                      >
+                        {isCompleted && (
+                          <Ionicons
+                            name="checkmark"
+                            size={14}
+                            color={Colors.background}
+                          />
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          styles.habitName,
+                          isCompleted && styles.habitNameCompleted,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {task.name}
+                      </Text>
+                    </View>
                     <View
                       style={[
-                        styles.taskIcon,
-                        isCompleted && { backgroundColor: COLORS.pastelGreen },
+                        styles.categoryDot,
+                        { backgroundColor: getCategoryColor(task.category) },
                       ]}
-                    >
-                      <Ionicons
-                        name={
-                          task.category === "health"
-                            ? "water"
-                            : task.category === "fitness"
-                            ? "fitness"
-                            : task.category === "mindfulness"
-                            ? "leaf"
-                            : task.category === "learning"
-                            ? "book"
-                            : "checkbox"
-                        }
-                        size={22}
-                        color={COLORS.black}
-                      />
-                    </View>
-                    <Text style={styles.taskPreviewText}>{task.name}</Text>
+                    />
                   </View>
-                  <View
-                    style={[
-                      styles.taskCheckbox,
-                      isCompleted && styles.taskCheckboxDone,
-                    ]}
-                  >
-                    {isCompleted && (
-                      <Ionicons
-                        name="checkmark"
-                        size={18}
-                        color={COLORS.black}
-                      />
-                    )}
-                  </View>
-                </Pressable>
-              );
-            })
-          )}
-
-          {tasks.length > 3 && (
-            <Pressable
-              style={styles.viewAllButton}
-              onPress={() => router.push("/(tabs)/tasks")}
-            >
-              <Text style={styles.viewAllText}>VIEW ALL TASKS →</Text>
-            </Pressable>
+                );
+              })}
+              {todaysTasks.length > 4 && (
+                <Text style={styles.moreHabitsText}>
+                  +{todaysTasks.length - 4} more habits
+                </Text>
+              )}
+            </View>
           )}
         </Animated.View>
+
+        {/* Active Goals Preview */}
+        {goals.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(250)}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Active Goals</Text>
+              <Pressable onPress={() => router.push("/(tabs)/goals")}>
+                <Text style={styles.seeAllText}>See all</Text>
+              </Pressable>
+            </View>
+
+            {goals
+              .filter((g) => !g.isArchived && g.currentValue < g.targetValue)
+              .slice(0, 2)
+              .map((goal) => {
+                const progress = Math.min(
+                  Math.round((goal.currentValue / goal.targetValue) * 100),
+                  100,
+                );
+                return (
+                  <Pressable
+                    key={goal.id}
+                    style={styles.goalPreviewCard}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/goal-detail",
+                        params: { id: goal.id },
+                      })
+                    }
+                  >
+                    <View style={styles.goalPreviewHeader}>
+                      <View style={styles.goalTitleContainer}>
+                        <Text style={styles.goalIcon}>{goal.icon || "🎯"}</Text>
+                        <Text style={styles.goalTitle} numberOfLines={1}>
+                          {goal.title}
+                        </Text>
+                      </View>
+                      <Text style={styles.goalProgress}>{progress}%</Text>
+                    </View>
+                    <View style={styles.goalProgressBarBg}>
+                      <LinearGradient
+                        colors={[Colors.cyberLime, "#B8E600"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={[
+                          styles.goalProgressBarFill,
+                          { width: `${Math.max(progress, 2)}%` },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.goalMeta}>
+                      {goal.currentValue} / {goal.targetValue} {goal.unit}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+          </Animated.View>
+        )}
       </ScrollView>
+
+      {/* Daily Streak Popup */}
+      <DailyStreakPopup
+        visible={showDailyPopup}
+        onClose={() => setShowDailyPopup(false)}
+      />
+
+      {/* Achievements Screen */}
+      <AchievementScreen
+        visible={showAchievements}
+        onClose={() => setShowAchievements(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -505,458 +547,449 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: Colors.background,
+  },
+  headerGradient: {
+    paddingBottom: Spacing.sm,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 3,
-    borderBottomColor: COLORS.black,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    flex: 1,
   },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.pastelGreen,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  welcomeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: COLORS.muted,
-    letterSpacing: 1,
+  greeting: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
   },
   userName: {
-    fontSize: 17,
-    fontWeight: "900",
-    color: COLORS.black,
+    fontSize: Typography.sizes["2xl"],
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+    marginTop: 2,
   },
-  notificationBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  achievementsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceElevated,
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  levelBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    paddingRight: Spacing.md,
+    paddingLeft: 4,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  levelGradient: {
+    width: 28,
+    height: 28,
+    borderRadius: BorderRadius.full,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  levelText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
   },
   scrollView: {
     flex: 1,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: Spacing.lg,
   },
-  heroCard: {
-    backgroundColor: COLORS.pastelGreen,
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 14,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 5, height: 5 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+  streakCard: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.cyberLime,
+  },
+  streakHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
+  streakIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.lg,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  streakInfo: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  streakNumber: {
+    fontSize: Typography.sizes["4xl"],
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
+    lineHeight: Typography.sizes["4xl"] * 1.1,
+  },
+  streakLabel: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+  },
+  streakStats: {
+    alignItems: "flex-end",
+  },
+  miniStat: {
+    alignItems: "center",
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    gap: 2,
+  },
+  miniStatValue: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.number,
+    color: Colors.cyberLime,
+  },
+  miniStatLabel: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
+  },
+  streakVisualization: {
     flexDirection: "row",
     justifyContent: "space-between",
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+  },
+  streakDayContainer: {
     alignItems: "center",
-    overflow: "hidden",
+    gap: Spacing.xs,
   },
-  heroContent: {
-    flex: 1,
-  },
-  heroLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: COLORS.black,
-    letterSpacing: 1,
+  streakDayLabel: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textMuted,
     marginBottom: 4,
   },
-  heroValue: {
-    fontSize: 34,
-    fontWeight: "900",
-    color: COLORS.black,
-    fontStyle: "italic",
-    letterSpacing: -1,
+  streakDayLabelActive: {
+    color: Colors.cyberLime,
   },
-  heroBest: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "rgba(0,0,0,0.7)",
+  streakDayCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.full,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  streakDayComplete: {
+    backgroundColor: Colors.cyberLime,
+  },
+  streakDayPartial: {
+    backgroundColor: Colors.cyberLimeLight,
+    borderColor: Colors.cyberLime,
+  },
+  streakDayLow: {
+    backgroundColor: `${Colors.warning}40`,
+    borderColor: Colors.warning,
+  },
+  streakDayEmpty: {
+    backgroundColor: Colors.surface,
+    borderColor: Colors.borderDefault,
+  },
+  streakDayFuture: {
+    backgroundColor: Colors.surface,
+    borderColor: Colors.borderDefault,
+    opacity: 0.4,
+  },
+  streakDayToday: {
+    borderColor: Colors.cyberLime,
+    borderWidth: 3,
+  },
+  streakDayPercent: {
+    fontSize: 9,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  statIconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  statValue: {
+    fontSize: Typography.sizes.xl,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textPrimary,
+  },
+  statLabel: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
     marginTop: 2,
   },
-  heroButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 50,
-    marginTop: 14,
-    alignSelf: "flex-start",
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    gap: 6,
-  },
-  heroButtonText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: COLORS.black,
-  },
-  heroEmojiContainer: {
-    position: "relative",
-  },
-  heroEmoji: {
-    fontSize: 60,
-  },
-  sparkle: {
-    position: "absolute",
-    top: -8,
-    right: -4,
-    fontSize: 20,
-  },
-  masterCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  masterLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: COLORS.muted,
-    letterSpacing: 0.5,
-  },
-  masterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  masterValue: {
-    fontSize: 26,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  masterEmoji: {
-    fontSize: 26,
-  },
-  legendBadge: {
-    backgroundColor: COLORS.pastelPink,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-  },
-  legendBadgeText: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
   heatmapCard: {
-    backgroundColor: COLORS.pastelPurple,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   heatmapHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: Spacing.lg,
   },
-  heatmapTitle: {
-    fontSize: 17,
-    fontWeight: "900",
-    color: COLORS.black,
+  sectionTitle: {
+    fontSize: Typography.sizes.lg,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
   },
-  yearBadge: {
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-  },
-  yearText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: COLORS.black,
-  },
-  calendarGrid: {
-    marginBottom: 14,
-  },
-  dayHeaders: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 8,
-  },
-  dayHeaderText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: COLORS.muted,
-    width: 36,
-    textAlign: "center",
-  },
-  calendarCells: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  calendarCell: {
-    width: "14.28%",
-    aspectRatio: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 8,
-    marginBottom: 4,
-  },
-  calendarCellEmpty: {
-    width: "14.28%",
-    aspectRatio: 1,
-  },
-  calendarCellToday: {
-    borderWidth: 2,
-    borderColor: COLORS.black,
-  },
-  calendarCellFuture: {
-    backgroundColor: "rgba(255,255,255,0.1)",
-  },
-  calendarCellText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: COLORS.black,
-  },
-  calendarCellTextFuture: {
-    color: "rgba(0,0,0,0.3)",
-  },
-  heatmapFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: 12,
-    borderTopWidth: 2,
-    borderTopColor: "rgba(0,0,0,0.1)",
-  },
-  completionLabel: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: COLORS.muted,
-    letterSpacing: 0.5,
-  },
-  completionValue: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  legend: {
+  legendInline: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
   },
-  legendText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: COLORS.muted,
+  legendLabel: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
+    marginRight: 4,
   },
   legendCell: {
-    width: 14,
-    height: 14,
+    width: 12,
+    height: 12,
     borderRadius: 3,
-    borderWidth: 1,
-    borderColor: COLORS.black,
   },
-  progressCard: {
-    backgroundColor: COLORS.pastelPink,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+  dayHeaders: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: Spacing.sm,
   },
-  progressCardBlue: {
-    backgroundColor: COLORS.pastelBlue,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 18,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+  dayHeaderText: {
+    width: CELL_SIZE,
+    textAlign: "center",
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textSecondary,
   },
-  progressHeader: {
+  calendarGrid: {
+    gap: CELL_GAP,
+  },
+  calendarWeek: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  calendarCell: {
+    width: CELL_SIZE,
+    height: CELL_SIZE,
+    borderRadius: BorderRadius.sm,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: CELL_GAP,
+  },
+  calendarCellEmpty: {
+    backgroundColor: "transparent",
+  },
+  calendarCellToday: {
+    borderWidth: 2,
+    borderColor: Colors.cyberLime,
+  },
+  calendarDayText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textSecondary,
+  },
+  calendarDayTextActive: {
+    color: Colors.background,
+    fontFamily: Typography.fonts.bodySemibold,
+  },
+  calendarDayTextToday: {
+    color: Colors.cyberLime,
+    fontFamily: Typography.fonts.bodySemibold,
+  },
+  sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-end",
-    marginBottom: 12,
+    alignItems: "center",
+    marginBottom: Spacing.md,
   },
-  progressLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "rgba(0,0,0,0.7)",
-    letterSpacing: 0.5,
+  seeAllText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.cyberLime,
   },
-  progressValue: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: COLORS.black,
-    fontStyle: "italic",
+  emptyHabits: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing["2xl"],
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+    borderStyle: "dashed",
+    marginBottom: Spacing.xl,
   },
-  progressBadge: {
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+  emptyHabitsText: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
-  progressBadgeWhite: {
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-  },
-  progressBadgeText: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  progressBadgeTextBlack: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: COLORS.black,
-  },
-  progressBarBg: {
-    height: 24,
-    backgroundColor: COLORS.white,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: COLORS.black,
+  addHabitButton: {
+    borderRadius: BorderRadius.full,
     overflow: "hidden",
   },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: COLORS.pastelGreen,
+  addHabitGradient: {
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
   },
-  progressBarFillPink: {
-    height: "100%",
-    backgroundColor: COLORS.pastelPink,
+  addHabitText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.background,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: COLORS.black,
-    fontStyle: "italic",
-    marginBottom: 12,
+  habitsList: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    overflow: "hidden",
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
-  emptyCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 18,
-    padding: 24,
-    marginBottom: 12,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    borderStyle: "dashed",
-    alignItems: "center",
-    gap: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: COLORS.muted,
-  },
-  taskPreview: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 3,
-    borderColor: COLORS.black,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
+  habitPreviewCard: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDefault,
   },
-  taskPreviewLeft: {
+  habitPreviewLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
     flex: 1,
+    gap: Spacing.md,
   },
-  taskIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: COLORS.white,
+  habitCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: BorderRadius.sm,
     borderWidth: 2,
-    borderColor: COLORS.black,
+    borderColor: Colors.borderDefault,
     justifyContent: "center",
     alignItems: "center",
   },
-  taskPreviewText: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: COLORS.black,
+  habitCheckboxCompleted: {
+    backgroundColor: Colors.cyberLime,
+    borderColor: Colors.cyberLime,
+  },
+  habitName: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodyMedium,
+    color: Colors.textPrimary,
     flex: 1,
   },
-  taskCheckbox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: COLORS.black,
-    justifyContent: "center",
+  habitNameCompleted: {
+    color: Colors.textSecondary,
+    textDecorationLine: "line-through",
+  },
+  categoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: BorderRadius.full,
+  },
+  moreHabitsText: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    padding: Spacing.md,
+  },
+  goalPreviewCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
+  },
+  goalPreviewHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: Spacing.sm,
   },
-  taskCheckboxDone: {
-    backgroundColor: COLORS.pastelGreen,
-  },
-  viewAllButton: {
+  goalTitleContainer: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    gap: Spacing.sm,
+    flex: 1,
   },
-  viewAllText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: COLORS.black,
+  goalIcon: {
+    fontSize: 18,
+  },
+  goalTitle: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.bodySemibold,
+    color: Colors.textPrimary,
+  },
+  goalProgress: {
+    fontSize: Typography.sizes.md,
+    fontFamily: Typography.fonts.number,
+    color: Colors.cyberLime,
+  },
+  goalProgressBarBg: {
+    height: 6,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+    marginBottom: Spacing.sm,
+  },
+  goalProgressBarFill: {
+    height: "100%",
+    borderRadius: BorderRadius.full,
+  },
+  goalMeta: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textSecondary,
   },
 });
