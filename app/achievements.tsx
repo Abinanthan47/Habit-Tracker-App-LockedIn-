@@ -49,12 +49,31 @@ const BADGE_IMAGES: Record<string, any> = {
   no_cheat: require("@/assets/images/badge30.png"),
 };
 
-// Rarity labels and colors
-const RARITY_CONFIG: Record<BadgeRarity, { label: string; color: string }> = {
-  common: { label: "Common", color: "#9CA3AF" },
-  rare: { label: "Rare", color: "#60A5FA" },
-  epic: { label: "Epic", color: "#A78BFA" },
-  legendary: { label: "Legendary", color: "#FBBF24" },
+// Rarity labels and colors - All green-based gradients
+const RARITY_CONFIG: Record<
+  BadgeRarity,
+  { label: string; color: string; gradient: readonly [string, string] }
+> = {
+  common: {
+    label: "Common",
+    color: "#4ADE80",
+    gradient: ["#4ADE80", "#22C55E"],
+  },
+  rare: {
+    label: "Rare",
+    color: "#10B981",
+    gradient: ["#34D399", "#10B981"],
+  },
+  epic: {
+    label: "Epic",
+    color: Colors.cyberLime,
+    gradient: [Colors.cyberLime, "#A3E635"],
+  },
+  legendary: {
+    label: "Legendary",
+    color: "#00FF88",
+    gradient: ["#00FF88", Colors.cyberLime],
+  },
 };
 
 interface AchievementScreenProps {
@@ -69,26 +88,28 @@ export function AchievementScreen({
   const { badges, currentStreak, completions } = useApp();
   const [activeTab, setActiveTab] = useState<"unlocked" | "locked">("unlocked");
   const confettiRef = useRef<LottieView>(null);
-  const rewardLightRef = useRef<LottieView>(null);
 
   // Animation for badge glow
   const glowScale = useSharedValue(1);
+  const shimmer = useSharedValue(0);
 
   useEffect(() => {
     if (visible && activeTab === "unlocked") {
-      // Play reward animations when showing unlocked badges
-      confettiRef.current?.play();
-      rewardLightRef.current?.play();
+      // Play confetti when showing unlocked badges
+      setTimeout(() => confettiRef.current?.play(), 300);
 
       // Pulsing glow effect
       glowScale.value = withRepeat(
         withSequence(
-          withTiming(1.1, { duration: 1000 }),
-          withTiming(1, { duration: 1000 }),
+          withTiming(1.05, { duration: 1500 }),
+          withTiming(1, { duration: 1500 }),
         ),
         -1,
         true,
       );
+
+      // Shimmer effect
+      shimmer.value = withRepeat(withTiming(1, { duration: 2000 }), -1, false);
     }
   }, [visible, activeTab]);
 
@@ -141,21 +162,14 @@ export function AchievementScreen({
       onRequestClose={onClose}
     >
       <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-        {/* Background reward light animation */}
-        {activeTab === "unlocked" && unlockedBadges.length > 0 && (
-          <LottieView
-            ref={rewardLightRef}
-            source={require("@/assets/images/Reward light effect.json")}
-            autoPlay
-            loop
-            style={styles.rewardLightBg}
-          />
-        )}
-
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.closeButton} onPress={onClose}>
-            <Ionicons name="close" size={24} color={Colors.textPrimary} />
+          <Pressable
+            style={styles.closeButton}
+            onPress={onClose}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
           </Pressable>
           <Text style={styles.headerTitle}>🏆 Achievements</Text>
           <View style={styles.badgeCount}>
@@ -221,13 +235,17 @@ export function AchievementScreen({
         >
           {displayBadges.length === 0 ? (
             <View style={[styles.emptyCard, { width: BADGE_CARD_WIDTH }]}>
-              <Ionicons
-                name={
-                  activeTab === "unlocked" ? "ribbon-outline" : "trophy-outline"
-                }
-                size={64}
-                color={Colors.textMuted}
-              />
+              <View style={styles.emptyIconCircle}>
+                <Ionicons
+                  name={
+                    activeTab === "unlocked"
+                      ? "ribbon-outline"
+                      : "trophy-outline"
+                  }
+                  size={48}
+                  color={Colors.textMuted}
+                />
+              </View>
               <Text style={styles.emptyText}>
                 {activeTab === "unlocked"
                   ? "No badges unlocked yet"
@@ -253,50 +271,63 @@ export function AchievementScreen({
                   style={[styles.badgeCard, { width: BADGE_CARD_WIDTH }]}
                 >
                   <LinearGradient
-                    colors={[`${rarityConfig.color}20`, Colors.surface]}
+                    colors={[`${rarityConfig.color}15`, Colors.surface]}
                     style={styles.badgeCardGradient}
                   >
-                    {/* Reward Light Effect for Unlocked Badges */}
-                    {isUnlocked && (
-                      <Animated.View
-                        style={[styles.glowContainer, animatedGlowStyle]}
-                      >
-                        <LottieView
-                          source={require("@/assets/images/Reward light effect.json")}
-                          autoPlay
-                          loop
-                          style={styles.rewardLight}
-                        />
-                      </Animated.View>
-                    )}
-
-                    {/* Badge Image */}
-                    <View
-                      style={[
-                        styles.badgeImageContainer,
-                        isUnlocked && {
-                          backgroundColor: `${rarityConfig.color}20`,
-                        },
-                      ]}
-                    >
-                      {badgeImage ? (
-                        <Image
-                          source={badgeImage}
-                          style={styles.badgeImage}
-                          contentFit="contain"
-                        />
-                      ) : (
-                        <Text style={styles.badgeEmoji}>{badge.icon}</Text>
-                      )}
-                      {!isUnlocked && (
-                        <View style={styles.lockOverlay}>
-                          <Ionicons
-                            name="lock-closed"
-                            size={40}
-                            color={Colors.textMuted}
+                    {/* Circle Badge Container with Glow */}
+                    <View style={styles.badgeCircleWrapper}>
+                      {/* Single Reward Light Effect for Unlocked Badges */}
+                      {isUnlocked && (
+                        <Animated.View
+                          style={[styles.glowContainer, animatedGlowStyle]}
+                        >
+                          <LottieView
+                            source={require("@/assets/images/Reward light effect.json")}
+                            autoPlay
+                            loop
+                            style={styles.rewardLight}
                           />
-                        </View>
+                        </Animated.View>
                       )}
+
+                      {/* Circle Badge Image */}
+                      <View
+                        style={[
+                          styles.badgeCircle,
+                          isUnlocked && {
+                            borderColor: rarityConfig.color,
+                            shadowColor: rarityConfig.color,
+                          },
+                        ]}
+                      >
+                        <LinearGradient
+                          colors={
+                            isUnlocked
+                              ? rarityConfig.gradient
+                              : ["#3B3B4F", "#2A2A3A"]
+                          }
+                          style={styles.badgeCircleInner}
+                        >
+                          {badgeImage ? (
+                            <Image
+                              source={badgeImage}
+                              style={styles.badgeImage}
+                              contentFit="cover"
+                            />
+                          ) : (
+                            <Text style={styles.badgeEmoji}>{badge.icon}</Text>
+                          )}
+                          {!isUnlocked && (
+                            <View style={styles.lockOverlay}>
+                              <Ionicons
+                                name="lock-closed"
+                                size={32}
+                                color={Colors.textMuted}
+                              />
+                            </View>
+                          )}
+                        </LinearGradient>
+                      </View>
                     </View>
 
                     {/* Badge Info */}
@@ -320,7 +351,7 @@ export function AchievementScreen({
                     <View
                       style={[
                         styles.rarityBadge,
-                        { backgroundColor: `${rarityConfig.color}30` },
+                        { backgroundColor: `${rarityConfig.color}20` },
                       ]}
                     >
                       <Ionicons
@@ -329,9 +360,11 @@ export function AchievementScreen({
                             ? "diamond"
                             : badge.rarity === "epic"
                               ? "flash"
-                              : "star"
+                              : badge.rarity === "rare"
+                                ? "star"
+                                : "ellipse"
                         }
-                        size={12}
+                        size={14}
                         color={rarityConfig.color}
                       />
                       <Text
@@ -355,10 +388,7 @@ export function AchievementScreen({
                         </View>
                         <View style={styles.progressBar}>
                           <LinearGradient
-                            colors={[
-                              rarityConfig.color,
-                              `${rarityConfig.color}80`,
-                            ]}
+                            colors={rarityConfig.gradient}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             style={[
@@ -367,6 +397,9 @@ export function AchievementScreen({
                             ]}
                           />
                         </View>
+                        <Text style={styles.progressPercent}>
+                          {Math.round(progress.percent)}% Complete
+                        </Text>
                       </View>
                     )}
 
@@ -415,13 +448,15 @@ export function AchievementScreen({
 
         {/* Confetti overlay for unlocked badges */}
         {activeTab === "unlocked" && unlockedBadges.length > 0 && (
-          <LottieView
-            ref={confettiRef}
-            source={require("@/assets/images/Confetti.json")}
-            autoPlay={false}
-            loop={false}
-            style={styles.confettiOverlay}
-          />
+          <View style={styles.confettiOverlay} pointerEvents="none">
+            <LottieView
+              ref={confettiRef}
+              source={require("@/assets/images/Confetti.json")}
+              autoPlay={false}
+              loop={false}
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
         )}
       </SafeAreaView>
     </Modal>
@@ -437,14 +472,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
-  },
-  rewardLightBg: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 300,
-    opacity: 0.3,
   },
   confettiOverlay: {
     position: "absolute",
@@ -529,46 +556,63 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: Colors.borderDefault,
-    minHeight: 420,
+    minHeight: 450,
     overflow: "hidden",
+  },
+  badgeCircleWrapper: {
+    position: "relative",
+    width: 180,
+    height: 180,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.xl,
   },
   glowContainer: {
     position: "absolute",
-    top: -50,
-    width: 250,
-    height: 250,
+    width: 220,
+    height: 220,
+    justifyContent: "center",
+    alignItems: "center",
   },
   rewardLight: {
     width: "100%",
     height: "100%",
   },
-  badgeImageContainer: {
-    width: 160,
-    height: 160,
-    borderRadius: BorderRadius["2xl"],
-    backgroundColor: Colors.surfaceElevated,
+  badgeCircle: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 2,
+    borderColor: "#36ff32ff",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+    overflow: "hidden",
+  },
+  badgeCircleInner: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: Spacing.xl,
     position: "relative",
-    overflow: "hidden",
-    zIndex: 1,
   },
   badgeImage: {
-    width: 130,
-    height: 130,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
   badgeEmoji: {
-    fontSize: 72,
+    fontSize: 56,
   },
   lockOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
+    borderRadius: 70,
   },
   badgeName: {
-    fontSize: Typography.sizes["2xl"],
+    fontSize: Typography.sizes["xl"],
     fontFamily: Typography.fonts.heading,
     marginBottom: Spacing.sm,
     textAlign: "center",
@@ -586,7 +630,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
     marginBottom: Spacing.lg,
@@ -595,10 +639,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.sm,
     fontFamily: Typography.fonts.bodySemibold,
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   progressContainer: {
     width: "100%",
     marginTop: Spacing.md,
+    paddingHorizontal: Spacing.sm,
   },
   progressHeader: {
     flexDirection: "row",
@@ -625,6 +671,13 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: BorderRadius.full,
   },
+  progressPercent: {
+    fontSize: Typography.sizes.xs,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textMuted,
+    textAlign: "center",
+    marginTop: Spacing.sm,
+  },
   unlockInfo: {
     flexDirection: "row",
     alignItems: "center",
@@ -650,11 +703,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderDefault,
   },
+  emptyIconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: Colors.surfaceElevated,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
   emptyText: {
     fontSize: Typography.sizes.xl,
     fontFamily: Typography.fonts.heading,
     color: Colors.textSecondary,
-    marginTop: Spacing.xl,
     textAlign: "center",
   },
   emptySubtext: {

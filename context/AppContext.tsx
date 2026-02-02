@@ -227,25 +227,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [tasks, completions, cheatDayConfig]);
 
   // Helper to get tasks for today based on frequency
+  // This returns ONLY daily tasks and custom day matches - NOT weekly/monthly
   const getTasksForTodayInternal = (taskList: Task[]): Task[] => {
     const today = new Date();
     const dayOfWeek = today.getDay();
-    const dayOfMonth = today.getDate();
 
     return taskList.filter((task) => {
+      // Daily tasks always show every day
       if (task.frequency === "daily") return true;
-      if (task.frequency === "monthly") {
-        // Monthly tasks: show on the same day each month (or last day if month is shorter)
-        return dayOfMonth === 1 || dayOfMonth <= 7; // First week of month
-      }
+
+      // Custom days only show on matched days
       if (task.frequency === "custom" && task.customDays) {
         return task.customDays.includes(dayOfWeek);
       }
-      if (task.frequency === "weekly") {
-        // Weekly tasks: show every day (user can complete once per week)
-        return true;
+
+      // Weekly and monthly tasks are NOT included in daily task list
+      // They should be tracked separately
+      if (task.frequency === "weekly" || task.frequency === "monthly") {
+        return false;
       }
-      return true;
+
+      return false;
     });
   };
 

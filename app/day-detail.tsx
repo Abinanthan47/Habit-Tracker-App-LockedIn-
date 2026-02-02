@@ -6,7 +6,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useApp } from "@/context/AppContext";
-import { getDayName } from "@/lib/dates";
+import { formatDate, getDayName } from "@/lib/dates";
 
 // Neo-Brutalism Vibrant Colors
 const COLORS = {
@@ -52,12 +52,13 @@ export default function DayDetailScreen() {
 
   const completedTasks = tasksForDay.filter((t) => completedTaskIds.has(t.id));
   const incompleteTasks = tasksForDay.filter(
-    (t) => !completedTaskIds.has(t.id) && completions.length > 0
+    (t) => !completedTaskIds.has(t.id) && completions.length > 0,
   );
 
   const dateObj = new Date(date);
-  const isToday = new Date().toISOString().split("T")[0] === date;
-  const isPast = dateObj < new Date(new Date().toISOString().split("T")[0]);
+  const todayStr = formatDate(new Date());
+  const isToday = todayStr === date;
+  const isPast = dateObj < new Date(todayStr);
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -185,7 +186,7 @@ export default function DayDetailScreen() {
                             {
                               hour: "numeric",
                               minute: "2-digit",
-                            }
+                            },
                           )
                         : task.timeOfDay}
                     </Text>

@@ -25,6 +25,7 @@ import {
   getCategoryColor,
 } from "@/constants/design";
 import { useApp } from "@/context/AppContext";
+import { formatDate } from "@/lib/dates";
 import type { Task, TaskFrequency, TimeOfDay } from "@/types";
 
 type FilterType = "all" | TaskFrequency;
@@ -67,7 +68,7 @@ export default function TasksScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-  const today = new Date().toISOString().split("T")[0];
+  const today = formatDate(new Date());
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -851,12 +852,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.surface,
-  },
-  actionDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: Colors.borderDefault,
-    marginHorizontal: Spacing.xs,
   },
   actionText: {
     fontSize: Typography.sizes.sm,

@@ -29,6 +29,7 @@ import {
   getCategoryColor,
 } from "@/constants/design";
 import { useApp } from "@/context/AppContext";
+import { formatDate } from "@/lib/dates";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CHART_WIDTH = SCREEN_WIDTH - Spacing.lg * 4 - 40;
@@ -141,10 +142,10 @@ export default function ProfileScreen() {
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
       date.setDate(startOfWeek.getDate() + i);
-      const dateStr = date.toISOString().split("T")[0];
+      const dateStr = formatDate(date);
       const activity = activities.find((a) => a.date === dateStr);
       const value = activity ? activity.completionRate : 0;
-      const isToday = dateStr === today.toISOString().split("T")[0];
+      const isToday = dateStr === formatDate(today);
 
       data.push({
         value: value,

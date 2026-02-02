@@ -1,6 +1,6 @@
 import { BorderRadius, Colors, Spacing, Typography } from "@/constants/design";
 import { useApp } from "@/context/AppContext";
-import { getToday } from "@/lib/dates";
+import { formatDate } from "@/lib/dates";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import LottieView from "lottie-react-native";
@@ -15,23 +15,19 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+// Week from Sunday to Saturday
 const DAYS_OF_WEEK = ["S", "M", "T", "W", "T", "F", "S"];
 
-interface StreakWidgetProps {
-  onAchievementsPress?: () => void;
-}
-
-export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
-  const {
-    currentStreak,
-    longestStreak,
-    activities,
-    completions,
-    getTasksForToday,
-  } = useApp();
+export function StreakWidget() {
+  const { currentStreak, activities, completions, getTasksForToday } = useApp();
   const lottieRef = useRef<LottieView>(null);
 
-  const today = getToday();
+  // Get today's date properly formatted in LOCAL timezone
+  const today = useMemo(() => {
+    const now = new Date();
+    return formatDate(now);
+  }, []);
+
   const todayTasks = useMemo(() => getTasksForToday(), [getTasksForToday]);
   const todayCompletions = useMemo(
     () => completions.filter((c) => c.date === today),
@@ -44,7 +40,7 @@ export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
   useEffect(() => {
     pulseScale.value = withRepeat(
       withSequence(
-        withTiming(1.05, { duration: 1000 }),
+        withTiming(1.1, { duration: 1000 }),
         withTiming(1, { duration: 1000 }),
       ),
       -1,
@@ -56,32 +52,50 @@ export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
     transform: [{ scale: pulseScale.value }],
   }));
 
-  // Weekly visualization data (Sunday to Saturday)
+  // Weekly visualization data (Sunday to Saturday) - properly synced with LOCAL timezone
   const weekData = useMemo(() => {
     const data = [];
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0 = Sunday
 
-    // Find Sunday of current week
-    const sunday = new Date(now);
-    sunday.setDate(now.getDate() - dayOfWeek);
+    // Find Sunday of current week using local date
+    const sunday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - dayOfWeek,
+    );
 
     // Generate 7 days starting from Sunday
     for (let i = 0; i < 7; i++) {
-      const date = new Date(sunday);
-      date.setDate(sunday.getDate() + i);
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const day = String(date.getDate()).padStart(2, "0");
-      const dateStr = `${year}-${month}-${day}`;
+      const date = new Date(
+        sunday.getFullYear(),
+        sunday.getMonth(),
+        sunday.getDate() + i,
+      );
+      const dateStr = formatDate(date);
 
       const activity = activities.find((a) => a.date === dateStr);
+
+      // Check if date is today using same format
       const isToday = dateStr === today;
-      const isFuture = date > now;
+
+      // Check if date is in the future using local midnight comparison
+      const todayMidnight = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+      );
+      const dateMidnight = new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+      );
+      const isFuture = dateMidnight > todayMidnight;
 
       data.push({
         day: DAYS_OF_WEEK[i],
         date: dateStr,
+        dayNumber: date.getDate(),
         completed: activity ? activity.tasksCompleted : 0,
         total: activity ? activity.taskTotal : 0,
         rate: activity ? activity.completionRate : 0,
@@ -92,7 +106,7 @@ export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
     return data;
   }, [activities, today]);
 
-  // Today's progress
+  // Today's progress - based on daily tasks only
   const todayProgress = useMemo(() => {
     if (todayTasks.length === 0) return { completed: 0, total: 0, rate: 100 };
     const completed = todayCompletions.length;
@@ -103,14 +117,14 @@ export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
 
   // Streak message based on streak count
   const streakMessage = useMemo(() => {
-    if (currentStreak >= 100) return "LEGENDARY! 🏆";
-    if (currentStreak >= 30) return "Unstoppable! 🔥";
+    if (currentStreak >= 100) return "Legendary!";
+    if (currentStreak >= 30) return "Unstoppable!";
     if (currentStreak >= 21) return "Habit Formed!";
-    if (currentStreak >= 14) return "Two weeks strong!";
-    if (currentStreak >= 7) return "Week warrior!";
-    if (currentStreak >= 3) return "Building momentum!";
-    if (currentStreak >= 1) return "Keep it going!";
-    return "Start your streak!";
+    if (currentStreak >= 14) return "Two weeks!";
+    if (currentStreak >= 7) return "One week!";
+    if (currentStreak >= 3) return "Building!";
+    if (currentStreak >= 1) return "Keep going!";
+    return "Start today!";
   }, [currentStreak]);
 
   return (
@@ -119,87 +133,84 @@ export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
         colors={[Colors.surfaceElevated, Colors.surface]}
         style={styles.gradient}
       >
-        {/* Top Row - Streak & Best */}
-        <View style={styles.topRow}>
-          {/* Flame with Streak */}
-          <View style={styles.streakSection}>
-            <Animated.View style={[styles.flameContainer, animatedFlameStyle]}>
-              <LottieView
-                ref={lottieRef}
-                source={require("@/assets/images/flame.json")}
-                autoPlay
-                loop
-                style={styles.flame}
-              />
-            </Animated.View>
-            <View style={styles.streakNumbers}>
-              <Text style={styles.streakCount}>{currentStreak}</Text>
-              <Text style={styles.streakLabel}>DAY STREAK</Text>
-            </View>
+        {/* Top Row - Streak Number with Flame on Right */}
+        <View style={styles.topSection}>
+          {/* Left: Streak Number */}
+          <View style={styles.streakNumberContainer}>
+            <Text style={styles.streakNumber}>{currentStreak}</Text>
           </View>
 
-          {/* Best Streak Badge */}
-          <View style={styles.bestSection}>
-            <View style={styles.bestBadge}>
-              <Ionicons name="trophy" size={14} color={Colors.warning} />
-              <Text style={styles.bestLabel}>BEST</Text>
-            </View>
-            <Text style={styles.bestCount}>{longestStreak}</Text>
+          {/* Center: Streak Text */}
+          <View style={styles.streakTextContainer}>
+            <Text style={styles.streakTitle}>Days Streak</Text>
+            <Text style={styles.streakSubtitle}>{streakMessage}</Text>
           </View>
+
+          {/* Right: Flame Animation */}
+          <Animated.View style={[styles.flameContainer, animatedFlameStyle]}>
+            <LottieView
+              ref={lottieRef}
+              source={require("@/assets/images/flame.json")}
+              autoPlay
+              loop
+              style={styles.flame}
+            />
+          </Animated.View>
         </View>
 
-        {/* Message */}
-        <Text style={styles.message}>{streakMessage}</Text>
-
-        {/* Weekly Progress */}
+        {/* Week Days Row - Sun to Sat */}
         <View style={styles.weekSection}>
-          <Text style={styles.weekTitle}>This Week</Text>
-          <View style={styles.weekRow}>
-            {weekData.map((day, index) => {
-              const isComplete = day.rate >= 80;
-              const isPartial = day.rate > 0 && day.rate < 80;
+          {weekData.map((day, index) => {
+            const isComplete = day.rate >= 80;
+            const isPartial = day.rate > 0 && day.rate < 80;
 
-              return (
-                <View key={index} style={styles.dayItem}>
-                  <Text
-                    style={[
-                      styles.dayLabel,
-                      day.isToday && styles.dayLabelToday,
-                    ]}
-                  >
-                    {day.day}
-                  </Text>
-                  <View
-                    style={[
-                      styles.dayCircle,
-                      isComplete && styles.dayCircleComplete,
-                      isPartial && styles.dayCirclePartial,
-                      day.isToday && styles.dayCircleToday,
-                      day.isFuture && styles.dayCircleFuture,
-                    ]}
-                  >
-                    {isComplete && !day.isFuture && (
-                      <Ionicons
-                        name="checkmark"
-                        size={14}
-                        color={Colors.background}
-                      />
-                    )}
-                    {isPartial && !day.isFuture && (
-                      <View style={styles.partialDot} />
-                    )}
-                  </View>
+            return (
+              <View key={`day-${index}`} style={styles.dayColumn}>
+                {/* Day Label */}
+                <Text
+                  style={[styles.dayLabel, day.isToday && styles.dayLabelToday]}
+                >
+                  {day.day}
+                </Text>
+
+                {/* Day Number / Status */}
+                <View
+                  style={[
+                    styles.dayCircle,
+                    day.isToday && styles.dayCircleToday,
+                    isComplete && !day.isFuture && styles.dayCircleComplete,
+                    isPartial && !day.isFuture && styles.dayCirclePartial,
+                  ]}
+                >
+                  {day.isFuture ? (
+                    <Text style={styles.dayNumberFuture}>{day.dayNumber}</Text>
+                  ) : isComplete ? (
+                    <Text style={styles.dayFlame}>
+                      <Ionicons name="checkmark" size={14} color={"white"} />
+                    </Text>
+                  ) : isPartial ? (
+                    <Text style={styles.dayNumberPartial}>{day.dayNumber}</Text>
+                  ) : (
+                    <Text
+                      style={[
+                        styles.dayNumber,
+                        day.isToday && styles.dayNumberToday,
+                      ]}
+                    >
+                      {day.dayNumber}
+                    </Text>
+                  )}
                 </View>
-              );
-            })}
-          </View>
+              </View>
+            );
+          })}
         </View>
 
-        {/* Today's Progress Bar */}
-        <View style={styles.todaySection}>
-          <View style={styles.todayHeader}>
-            <Text style={styles.todayLabel}>Today's Progress</Text>
-            <Text style={styles.todayCount}>
+        {/* Today's Tasks Progress */}
+        <View style={styles.progressSection}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressLabel}>Today's Tasks</Text>
+            <Text style={styles.progressCount}>
               {todayProgress.completed}/{todayProgress.total}
             </Text>
           </View>
@@ -207,8 +218,8 @@ export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
             <LinearGradient
               colors={
                 todayProgress.rate >= 100
-                  ? [Colors.success, "#22C55E"]
-                  : [Colors.cyberLime, "#B8E600"]
+                  ? [Colors.success, "#96fd51ff"]
+                  : [Colors.cyberLime, Colors.cyberLimeMuted]
               }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -218,7 +229,6 @@ export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
               ]}
             />
           </View>
-          <Text style={styles.progressPercent}>{todayProgress.rate}%</Text>
         </View>
       </LinearGradient>
     </Animated.View>
@@ -228,173 +238,146 @@ export function StreakWidget({ onAchievementsPress }: StreakWidgetProps) {
 const styles = StyleSheet.create({
   container: {
     marginBottom: Spacing.lg,
-    borderRadius: BorderRadius["2xl"],
+    borderRadius: BorderRadius.xl,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: Colors.cyberLime,
+    borderColor: Colors.borderDefault,
   },
   gradient: {
     padding: Spacing.lg,
   },
-  topRow: {
+  topSection: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.lg,
   },
-  streakSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
+  streakNumberContainer: {
+    marginRight: Spacing.md,
+  },
+  streakNumber: {
+    fontSize: 52,
+    fontFamily: Typography.fonts.number,
+    color: Colors.cyberLime,
+    lineHeight: 56,
+  },
+  streakTextContainer: {
+    flex: 1,
+  },
+  streakTitle: {
+    fontSize: Typography.sizes.xl,
+    fontFamily: Typography.fonts.heading,
+    color: Colors.textPrimary,
+  },
+  streakSubtitle: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.body,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   flameContainer: {
-    width: 60,
-    height: 60,
+    width: 56,
+    height: 56,
   },
   flame: {
     width: "100%",
     height: "100%",
   },
-  streakNumbers: {
-    alignItems: "flex-start",
-  },
-  streakCount: {
-    fontSize: 48,
-    fontFamily: Typography.fonts.number,
-    color: Colors.cyberLime,
-    lineHeight: 52,
-  },
-  streakLabel: {
-    fontSize: Typography.sizes.xs,
-    fontFamily: Typography.fonts.bodySemibold,
-    color: Colors.textMuted,
-    letterSpacing: 1,
-  },
-  bestSection: {
-    alignItems: "center",
-    backgroundColor: Colors.surface,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderDefault,
-  },
-  bestBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 2,
-  },
-  bestLabel: {
-    fontSize: Typography.sizes.xs,
-    fontFamily: Typography.fonts.bodySemibold,
-    color: Colors.warning,
-  },
-  bestCount: {
-    fontSize: Typography.sizes["2xl"],
-    fontFamily: Typography.fonts.number,
-    color: Colors.textPrimary,
-  },
-  message: {
-    fontSize: Typography.sizes.md,
-    fontFamily: Typography.fonts.bodySemibold,
-    color: Colors.textSecondary,
-    textAlign: "center",
-    marginBottom: Spacing.lg,
-  },
   weekSection: {
-    marginBottom: Spacing.lg,
-  },
-  weekTitle: {
-    fontSize: Typography.sizes.sm,
-    fontFamily: Typography.fonts.bodySemibold,
-    color: Colors.textMuted,
-    marginBottom: Spacing.sm,
-  },
-  weekRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderMuted,
   },
-  dayItem: {
+  dayColumn: {
     alignItems: "center",
-    gap: 4,
+    gap: Spacing.xs,
   },
   dayLabel: {
     fontSize: Typography.sizes.xs,
-    fontFamily: Typography.fonts.body,
+    fontFamily: Typography.fonts.bodySemibold,
     color: Colors.textMuted,
   },
   dayLabelToday: {
     color: Colors.cyberLime,
-    fontFamily: Typography.fonts.bodySemibold,
   },
   dayCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: Colors.surfaceElevated,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  dayCircleComplete: {
-    backgroundColor: Colors.cyberLime,
-    borderColor: Colors.cyberLime,
-  },
-  dayCirclePartial: {
-    backgroundColor: Colors.surfaceElevated,
-    borderColor: Colors.warning,
+    borderWidth: 1,
+    borderColor: Colors.borderDefault,
   },
   dayCircleToday: {
     borderColor: Colors.cyberLime,
     borderWidth: 2,
   },
-  dayCircleFuture: {
-    opacity: 0.4,
+  dayCircleComplete: {
+    backgroundColor: Colors.cyberLimeLight,
+    borderColor: Colors.cyberLime,
   },
-  partialDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.warning,
+  dayCirclePartial: {
+    backgroundColor: `${Colors.warning}20`,
+    borderColor: Colors.warning,
   },
-  todaySection: {
+  dayNumber: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textSecondary,
+  },
+  dayNumberToday: {
+    color: Colors.cyberLime,
+  },
+  dayNumberFuture: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.textMuted,
+  },
+  dayNumberPartial: {
+    fontSize: Typography.sizes.sm,
+    fontFamily: Typography.fonts.number,
+    color: Colors.warning,
+  },
+  dayFlame: {
+    fontSize: 13,
+  },
+  progressSection: {
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.md,
     padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderMuted,
   },
-  todayHeader: {
+  progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: Spacing.sm,
   },
-  todayLabel: {
+  progressLabel: {
     fontSize: Typography.sizes.sm,
     fontFamily: Typography.fonts.bodySemibold,
-    color: Colors.textSecondary,
+    color: Colors.textPrimary,
   },
-  todayCount: {
+  progressCount: {
     fontSize: Typography.sizes.sm,
     fontFamily: Typography.fonts.number,
-    color: Colors.textPrimary,
+    color: Colors.cyberLime,
   },
   progressBarBg: {
     height: 8,
-    backgroundColor: Colors.borderDefault,
+    backgroundColor: Colors.surfaceElevated,
     borderRadius: BorderRadius.full,
     overflow: "hidden",
-    marginBottom: Spacing.xs,
   },
   progressBarFill: {
     height: "100%",
     borderRadius: BorderRadius.full,
-  },
-  progressPercent: {
-    fontSize: Typography.sizes.xs,
-    fontFamily: Typography.fonts.number,
-    color: Colors.cyberLime,
-    textAlign: "right",
   },
 });

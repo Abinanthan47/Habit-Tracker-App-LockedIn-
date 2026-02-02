@@ -25,7 +25,7 @@ export const Colors = {
   borderMuted: "#1F1F1F",
 
   // Status Colors
-  success: "#00FF88",
+  success: "#37eb5eff",
   warning: "#FFB800",
   error: "#FF4444",
   info: "#00B4FF",

@@ -31,6 +31,7 @@ import {
   getHeatmapColor,
 } from "@/constants/design";
 import { useApp } from "@/context/AppContext";
+import { formatDate } from "@/lib/dates";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -62,7 +63,7 @@ export default function HomeScreen() {
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
   // Use local timezone date format
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const today = formatDate(now);
 
   // Show daily streak popup on first app launch of the day
   useEffect(() => {
@@ -144,7 +145,7 @@ export default function HomeScreen() {
     // Add days of month
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      const dateStr = date.toISOString().split("T")[0];
+      const dateStr = formatDate(date);
       const activity = activities.find((a) => a.date === dateStr);
       const level = activity ? activity.completionRate / 100 : 0;
 
@@ -187,7 +188,7 @@ export default function HomeScreen() {
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
       date.setDate(startOfWeek.getDate() + i);
-      const dateStr = date.toISOString().split("T")[0];
+      const dateStr = formatDate(date);
       const activity = activities.find((a) => a.date === dateStr);
       const isFuture = date > todayDate;
 
@@ -264,8 +265,9 @@ export default function HomeScreen() {
           <StreakWidget />
         </Animated.View>
 
-        {/* Quick Stats */}
+        {/* Quick Stats Row */}
         <Animated.View entering={FadeInDown.delay(100)} style={styles.statsRow}>
+          {/* Today's Progress */}
           <LinearGradient
             colors={[`${Colors.cyberLime}15`, `${Colors.cyberLime}05`]}
             style={styles.statCard}
@@ -287,32 +289,36 @@ export default function HomeScreen() {
             </Text>
             <Text style={styles.statLabel}>Today</Text>
           </LinearGradient>
+
+          {/* Active Days */}
           <LinearGradient
-            colors={[`${Colors.info}15`, `${Colors.info}05`]}
+            colors={[`${Colors.cyberLime}15`, `${Colors.cyberLime}05`]}
             style={styles.statCard}
           >
             <View
               style={[
                 styles.statIconBg,
-                { backgroundColor: `${Colors.info}30` },
+                { backgroundColor: `${Colors.cyberLime}30` },
               ]}
             >
-              <Ionicons name="calendar" size={18} color={Colors.info} />
+              <Ionicons name="calendar" size={18} color={Colors.cyberLime} />
             </View>
             <Text style={styles.statValue}>{activeDaysThisMonth}</Text>
             <Text style={styles.statLabel}>Active Days</Text>
           </LinearGradient>
+
+          {/* Progress Rate */}
           <LinearGradient
-            colors={[`${Colors.success}15`, `${Colors.success}05`]}
+            colors={[`${Colors.cyberLime}15`, `${Colors.cyberLime}05`]}
             style={styles.statCard}
           >
             <View
               style={[
                 styles.statIconBg,
-                { backgroundColor: `${Colors.success}30` },
+                { backgroundColor: `${Colors.cyberLime}30` },
               ]}
             >
-              <Ionicons name="trending-up" size={18} color={Colors.success} />
+              <Ionicons name="trending-up" size={18} color={Colors.cyberLime} />
             </View>
             <Text style={styles.statValue}>{todayCompletionRate}%</Text>
             <Text style={styles.statLabel}>Progress</Text>
